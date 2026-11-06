@@ -1,0 +1,51 @@
+# Unity tarafından üretilenler: her makinede yeniden oluşuyor
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+/Build file/
+
+# Kişisel IDE dosyaları (Unity yeniden üretiyor)
+.vs/
+.vscode/
+.idea/
+.gradle/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# Crash raporları, build çıktıları
+sysinfo.txt
+crashlytics-build.properties
+*.apk
+*.aab
+*.unitypackage
+*.app
+
+# ParrelSync klonları (proje klasörünün yanında oluşuyor, ama yine de)
+*_clone_*/
+.clone
+
+# İşletim sistemi
+.DS_Store
+Thumbs.db
+desktop.ini
