@@ -38,16 +38,23 @@ namespace Dishaster
         public float gateThreshold = 0.012f;
         [Tooltip("Konuşma bitince bu kadar daha gönderiliyor: kelime sonları kesilmesin.")]
         public float gateHoldSeconds = 0.35f;
+        [Tooltip("Otomatik kazanç: konuşmanın tepe seviyesi buraya çekiliyor (kısık mikrofonlar da duyulsun).")]
+        [Range(0.1f, 1f)] public float targetPeak = 0.6f;
+        [Tooltip("Otomatik kazancın en fazla kaç kat yükseltebileceği.")]
+        public float maxGain = 8f;
 
         [Header("Dinleme")]
         [Range(0f, 1f)] public float volume = 1f;
-        [Range(0f, 1f)] public float spatialBlend = 0.8f;
-        public float minDistance = 4f;
-        public float maxDistance = 30f;
+        [Range(0f, 1f)] public float spatialBlend = 0.6f;
+        [Tooltip("Bu mesafeye kadar tam ses; sonrası yavaşça azalıyor (oda küçük, herkes duysun).")]
+        public float minDistance = 6f;
+        public float maxDistance = 40f;
 
         [Header("Roller")]
         [Tooltip("Bilmiyorum'un sesi bu frekansın altına kesiliyor: kelimeler anlaşılmıyor, sadece mırıltı.")]
         public float muffleCutoff = 350f;
+        [Tooltip("Filtre sesi kıstığı için Bilmiyorum'un sesi bu kadar yükseltiliyor.")]
+        public float muffleGain = 2.2f;
         [Tooltip("Kapalıyken Duymadım kimsenin sesini duymuyor.")]
         public bool deafHearsVoice;
 
@@ -68,6 +75,7 @@ namespace Dishaster
         double _resamplePosition;
         float _lastMicSample;
         float _gateUntil = float.NegativeInfinity;
+        float _gain = 2f;
         bool _shownSpeaking;
 
         void Awake()
@@ -174,8 +182,16 @@ namespace Dishaster
             if (Mathf.Sqrt(sum / ChunkSamples) > gateThreshold) _gateUntil = Time.time + gateHoldSeconds;
             if (Time.time >= _gateUntil) return;
 
+            // Otomatik kazanç: yüksek sesde hemen kısılıyor, sessizleşince yavaşça açılıyor; tepeler yine de kırpılıyor.
+            float peak = 0f;
             for (int i = 0; i < ChunkSamples; i++)
-                _encoded[i] = MuLaw.Encode(_chunk[i]);
+                peak = Mathf.Max(peak, Mathf.Abs(_chunk[i]));
+
+            float wanted = Mathf.Clamp(targetPeak / Mathf.Max(peak, 0.001f), 1f, maxGain);
+            _gain = wanted < _gain ? wanted : Mathf.MoveTowards(_gain, wanted, 0.15f);
+
+            for (int i = 0; i < ChunkSamples; i++)
+                _encoded[i] = MuLaw.Encode(Mathf.Clamp(_chunk[i] * _gain, -1f, 1f));
 
             NetworkClient.Send(new VoiceMessage { data = new ArraySegment<byte>(_encoded) }, Channels.Unreliable);
         }
@@ -204,7 +220,8 @@ namespace Dishaster
             go.transform.SetParent(speaker.headPivot, false);
 
             var voice = go.AddComponent<VoiceSpeaker>();
-            voice.Setup(volume, spatialBlend, minDistance, maxDistance, MonkeyRoles.IsMouthTied(speaker.role) ? muffleCutoff : 0f);
+            bool muffled = MonkeyRoles.IsMouthTied(speaker.role);
+            voice.Setup(volume, muffled ? muffleGain : 1f, spatialBlend, minDistance, maxDistance, muffled ? muffleCutoff : 0f);
             return voice;
         }
 
