@@ -296,6 +296,7 @@ namespace Dishaster
         {
             DrawingBoard.RegisterServerHandlers();
             NotebookRole.RegisterServerHandlers();
+            VoiceChat.RegisterServerHandlers();
             LowVisionRole.RegisterServerHandlers();
             KitchenCounter.RegisterServerHandlers();
         }
@@ -304,6 +305,7 @@ namespace Dishaster
         {
             DrawingBoard.RegisterClientHandlers();
             NotebookRole.RegisterClientHandlers();
+            VoiceChat.RegisterClientHandlers();
             LowVisionRole.RegisterClientHandlers();
             KitchenCounter.RegisterClientHandlers();
         }

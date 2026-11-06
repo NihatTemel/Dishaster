@@ -29,5 +29,8 @@ namespace Dishaster
 
         /// <summary>Konuşamayan oyuncu anlatmak için elindeki deftere çiziyor.</summary>
         public static bool CanDraw(int role) => role == Mute;
+
+        /// <summary>Bilmiyorum'un ağzı bağlı: konuşabiliyor ama sesi boğuk, kelimeler anlaşılmıyor.</summary>
+        public static bool IsMouthTied(int role) => role == Mute;
     }
 }
