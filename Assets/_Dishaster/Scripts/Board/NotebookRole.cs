@@ -194,7 +194,7 @@ namespace Dishaster
             }
 
             // İmleç serbestse ESC menüsü açık demek.
-            bool hasControl = Cursor.lockState == CursorLockMode.Locked;
+            bool hasControl = Cursor.lockState == CursorLockMode.Locked && !_owner.ControlBlocked;
             prompt.SetActive(hasControl);
             if (!hasControl)
             {

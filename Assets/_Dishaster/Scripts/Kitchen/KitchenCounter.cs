@@ -103,6 +103,9 @@ namespace Dishaster
 
         public KitchenItem Held => _held;
 
+        /// <summary>Sahnedeki tüm eşyalar (dilimler dahil); sıra eşya numarası.</summary>
+        public IReadOnlyList<KitchenItem> Items => _items;
+
         public Recipe Recipe => _recipe;
 
         // Son dökme ya da kaseye ekleme (dökme göstergesi için). Kaynak yoksa tane tane eklendi; hedef yoksa yere döküldü.

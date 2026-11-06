@@ -162,7 +162,7 @@ namespace Dishaster
             hand.SetPositionAndRotation(Vector3.Lerp(hand.position, target, 1f - Mathf.Exp(-HandSmoothing * Time.deltaTime)), rotation);
 
             // İmleç serbestse ESC menüsü açık demek.
-            if (Cursor.lockState == CursorLockMode.Locked && KitchenCounter.Instance != null)
+            if (Cursor.lockState == CursorLockMode.Locked && !_player.ControlBlocked && KitchenCounter.Instance != null)
             {
                 if (Input.GetMouseButtonDown(0)) KitchenCounter.Instance.RequestGrabOrDrop(_aimPoint);
                 if (Input.GetMouseButtonDown(1)) KitchenCounter.Instance.RequestCut(_aimPoint);

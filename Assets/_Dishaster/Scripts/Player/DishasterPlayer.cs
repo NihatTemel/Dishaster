@@ -43,6 +43,9 @@ namespace Dishaster
         float _verticalVelocity;
         float _baseFieldOfView;
 
+        /// <summary>İnceleme gibi kamerayı başka yere alan modlar: yürüme, bakış ve el/defter girişleri duruyor.</summary>
+        public bool ControlBlocked { get; set; }
+
         [Server]
         public void ServerInit(int monkeyRole, string displayName)
         {
@@ -86,7 +89,7 @@ namespace Dishaster
             if (!isLocalPlayer) return;
 
             // İmleç serbestse (ESC menüsü) oyuncu kontrolü durur, yerçekimi devam eder.
-            bool hasControl = Cursor.lockState == CursorLockMode.Locked;
+            bool hasControl = Cursor.lockState == CursorLockMode.Locked && !ControlBlocked;
 
             UpdateZoom(hasControl);
             if (hasControl) Look();
