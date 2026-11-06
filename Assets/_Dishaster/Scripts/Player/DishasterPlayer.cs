@@ -22,6 +22,10 @@ namespace Dishaster
         public float mouseSensitivity = 2f;
         public float maxPitch = 85f;
 
+        [Header("Yakından bakma (Z basılıyken; görmeyen hariç)")]
+        public float zoomFieldOfView = 22f;
+        public float zoomSpeed = 12f;
+
         [Header("Referanslar")]
         public Renderer bodyRenderer;
         public Renderer visorRenderer;
@@ -30,12 +34,14 @@ namespace Dishaster
         public TMP_Text label;
 
         const float CameraBlendSpeed = 10f;
+        const KeyCode ZoomKey = KeyCode.Z;
 
         CharacterController _controller;
         Camera _viewCamera;
         Transform _cameraOverride;
         float _pitch;
         float _verticalVelocity;
+        float _baseFieldOfView;
 
         [Server]
         public void ServerInit(int monkeyRole, string displayName)
@@ -67,6 +73,7 @@ namespace Dishaster
             if (sceneCamera != null) sceneCamera.gameObject.SetActive(false);
 
             playerCamera.gameObject.SetActive(true);
+            _baseFieldOfView = playerCamera.fieldOfView;
 
             // Kendi gövdemiz görünmesin ama gölgesi kalsın.
             bodyRenderer.shadowCastingMode = ShadowCastingMode.ShadowsOnly;
@@ -81,15 +88,28 @@ namespace Dishaster
             // İmleç serbestse (ESC menüsü) oyuncu kontrolü durur, yerçekimi devam eder.
             bool hasControl = Cursor.lockState == CursorLockMode.Locked;
 
+            UpdateZoom(hasControl);
             if (hasControl) Look();
             Move(hasControl);
         }
 
+        /// <summary>Uzaktaki küçük şeyler (ölçü bardağının çizgileri) okunabilsin diye. Görmeyen yakınlaştıramıyor.</summary>
+        bool CanZoom => role != MonkeyRoles.LowVision || DishasterTest.LowVisionSeesEverything;
+
+        void UpdateZoom(bool hasControl)
+        {
+            bool zooming = hasControl && CanZoom && Input.GetKey(ZoomKey);
+            float target = zooming ? zoomFieldOfView : _baseFieldOfView;
+            playerCamera.fieldOfView = Mathf.Lerp(playerCamera.fieldOfView, target, 1f - Mathf.Exp(-zoomSpeed * Time.deltaTime));
+        }
+
         void Look()
         {
-            transform.Rotate(0f, Input.GetAxis("Mouse X") * mouseSensitivity, 0f);
+            // Yakınlaşınca bakış da aynı oranda yavaşlıyor.
+            float sensitivity = mouseSensitivity * playerCamera.fieldOfView / _baseFieldOfView;
+            transform.Rotate(0f, Input.GetAxis("Mouse X") * sensitivity, 0f);
 
-            _pitch = Mathf.Clamp(_pitch - Input.GetAxis("Mouse Y") * mouseSensitivity, -maxPitch, maxPitch);
+            _pitch = Mathf.Clamp(_pitch - Input.GetAxis("Mouse Y") * sensitivity, -maxPitch, maxPitch);
             headPivot.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
         }
 

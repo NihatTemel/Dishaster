@@ -14,7 +14,7 @@ namespace Dishaster.EditorTools
     [InitializeOnLoad]
     public static class RecipeHudInstaller
     {
-        const string Version = "2";
+        const string Version = "3";
         const string VersionFile = "ProjectSettings/DishasterRecipeHud.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/RecipeHud.prefab";
 
@@ -72,11 +72,6 @@ namespace Dishaster.EditorTools
             RectTransform failPanel = AddPanel(canvas, "FailPanel", FailColor, new Vector2(0.5f, 1f), new Vector2(0f, -110f), new Vector2(980f, 130f));
             hud.failPanel = failPanel.gameObject;
             hud.failText = DishasterSceneBuilder.AddText(failPanel, "FailText", "", 40f, TextColor, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(940f, 120f));
-
-            // Dökme göstergesi: alt ortada, nişangahın altında.
-            RectTransform pourPanel = AddPanel(canvas, "PourPanel", PanelColor, new Vector2(0.5f, 0f), new Vector2(0f, 150f), new Vector2(620f, 170f));
-            hud.pourPanel = pourPanel.gameObject;
-            hud.pourText = DishasterSceneBuilder.AddText(pourPanel, "PourText", "", 32f, TextColor, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(590f, 160f));
 
             PrefabUtility.SaveAsPrefabAsset(canvas.gameObject, PrefabPath);
             Object.DestroyImmediate(canvas.gameObject);

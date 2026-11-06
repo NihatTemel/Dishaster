@@ -14,7 +14,7 @@ namespace Dishaster.EditorTools
     [InitializeOnLoad]
     public static class KitchenCounterInstaller
     {
-        const string Version = "4";
+        const string Version = "5";
         const string VersionFile = "ProjectSettings/DishasterKitchenCounter.version";
         const string OldTablePath = "Assets/_Dishaster/Prefabs/Table.prefab";
         const string CounterPath = "Assets/_Dishaster/Prefabs/Counter.prefab";
@@ -156,25 +156,26 @@ namespace Dishaster.EditorTools
         const float CupFillTop = 0.116f;
         const float CupMarkRadius = 0.0606f;
 
-        // Camın önünde ve arkasında birer sütun: her 100 ml'de çizgi, 500 ve 1000'de uzun; 200'lerde rakam.
+        // Camın çevresinde üç sütun (her yönden biri okunuyor): her 100 ml'de koyu çizgi ve rakam, 500 ve 1000'de uzun çizgi.
         // Seviye içerikle aynı ölçekte (fillBottom..fillTop = 0..kapasite), çizgiyle dolum tam denk geliyor.
         static void AddCupMarks(Transform parent, float bottom, float top, float capacity)
         {
             Material mark = DishasterSceneBuilder.GetMaterial("M_CupMark", new Color(0.12f, 0.22f, 0.55f));
-            float[] columns = { 0f, 180f };
+            mark.color = new Color(0.08f, 0.08f, 0.10f);
+            EditorUtility.SetDirty(mark);
+            float[] columns = { 0f, 120f, 240f };
 
             foreach (float column in columns)
             {
                 for (int ml = 100; ml <= capacity; ml += 100)
                 {
                     float y = bottom + (top - bottom) * ml / capacity;
-                    float length = ml % 500 == 0 ? 0.026f : ml % 200 == 0 ? 0.018f : 0.01f;
+                    float length = ml % 500 == 0 ? 0.03f : 0.018f;
 
-                    Transform tick = AddPart(parent, PrimitiveType.Cube, $"Mark{ml}", OnGlass(column, y), new Vector3(length, 0.0014f, 0.0012f), mark);
+                    Transform tick = AddPart(parent, PrimitiveType.Cube, $"Mark{column}_{ml}", OnGlass(column, y), new Vector3(length, 0.0026f, 0.0015f), mark);
                     tick.localRotation = FacingOut(column);
 
-                    if (ml % 200 == 0)
-                        AddMarkLabel(parent, ml.ToString(), column - 26f, y, mark.color);
+                    AddMarkLabel(parent, ml.ToString(), column - 30f, y, mark.color);
                 }
             }
         }
@@ -190,9 +191,9 @@ namespace Dishaster.EditorTools
             label.transform.SetParent(parent, false);
             label.transform.localPosition = OnGlass(angle, y);
             label.transform.localRotation = FacingOut(angle);
-            label.rectTransform.sizeDelta = new Vector2(0.03f, 0.01f);
+            label.rectTransform.sizeDelta = new Vector2(0.04f, 0.012f);
             label.text = text;
-            label.fontSize = 0.085f;
+            label.fontSize = 0.1f;
             label.fontStyle = FontStyles.Bold;
             label.color = color;
             label.alignment = TextAlignmentOptions.Center;

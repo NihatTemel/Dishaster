@@ -40,7 +40,7 @@ MeshFilter:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 835978545835147748}
-  m_Mesh: {fileID: -7483659775366975678, guid: ecb07c7c89e7f6a47824276e5417723f, type: 2}
+  m_Mesh: {fileID: -8584863061396658143, guid: ecb07c7c89e7f6a47824276e5417723f, type: 2}
 --- !u!23 &1719448083088560201
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -94,6 +94,7 @@ GameObject:
   m_Component:
   - component: {fileID: 4928938128476786203}
   - component: {fileID: 3315234436992661207}
+  - component: {fileID: 1039434660206937384}
   - component: {fileID: 2942443417051096997}
   m_Layer: 0
   m_Name: StrawberrySlice
@@ -138,6 +139,20 @@ MonoBehaviour:
   segments: []
   slicePrefab: {fileID: 0}
   sliceScales: []
+--- !u!114 &1039434660206937384
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3556866127125004601}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d4ae73ff383fd054dab6489b1c47a3e6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ingredient: 5
+  amount: 1
 --- !u!65 &2942443417051096997
 BoxCollider:
   m_ObjectHideFlags: 0
