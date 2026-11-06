@@ -93,6 +93,7 @@ namespace Dishaster
         readonly Recipe _recipe = new Recipe();
 
         KitchenContainer _bowl;
+        KitchenContainer _cup;
         float _nextPourSend;
         float _lastPourTime = float.NegativeInfinity;
 
@@ -136,7 +137,10 @@ namespace Dishaster
             foreach (KitchenItem item in items)
             {
                 Register(item);
-                if (item.TryGetComponent(out KitchenContainer container) && container.isMixingBowl) _bowl = container;
+                if (!item.TryGetComponent(out KitchenContainer container)) continue;
+                if (container.isMixingBowl) _bowl = container;
+                // Ölçü bardağı: hem alan hem döken tek kap.
+                else if (container.canPour && container.canReceive) _cup = container;
             }
 
             // Buzdolabı ayrı prefab; kapak numaraları da konuma göre.
@@ -481,9 +485,12 @@ namespace Dishaster
                     slice.transform.localScale = new Vector3(item.NextSliceScale, 1f, item.NextSliceScale);
                     Register(slice);
                     item.CutOnce();
+                    if (slice.TryGetComponent(out KitchenIngredientItem sliceIngredient)) _recipe.NoteSlice(sliceIngredient.ingredient);
                     if (_chopTimer <= 0f) _chopTimer = ChopSeconds;
                     break;
             }
+
+            _recipe.UpdateSteps(_cup, _bowl);
         }
 
         // ── AĞ ──────────────────────────────────────────────────────────────
