@@ -13,7 +13,7 @@ namespace Dishaster.EditorTools
     [InitializeOnLoad]
     public static class VoiceChatInstaller
     {
-        const string Version = "1";
+        const string Version = "2";
         const string VersionFile = "ProjectSettings/DishasterVoiceChat.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/VoiceChat.prefab";
 

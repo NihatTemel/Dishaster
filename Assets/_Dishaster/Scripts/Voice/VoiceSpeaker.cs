@@ -4,26 +4,42 @@ using UnityEngine;
 namespace Dishaster
 {
     /// <summary>
-    /// Bir konuşanın sesi (VoiceChat yaratıyor, konuşanın kafasına bağlı). Gelen parçalar halka tampona yazılıyor,
-    /// akış klibi oradan çalıyor. Ağ gecikmesi dalgalansa da kesilmesin diye önce biraz biriktiriliyor.
+    /// Bir konuşanın sesi (VoiceChat yaratıyor, konuşanın kafasına bağlı). Gelen parçalar halka tampona yazılıyor;
+    /// ses motoru OnAudioFilterRead'de doğrudan buradan okuyor (akış klibi ileriyi okuyup gecikme ekliyordu).
+    /// AudioSource sabit 1'lerden oluşan bir klip çalıyor, ses onunla çarpılıyor: mesafe ve yön aynen kalıyor.
+    /// Ağ gecikmesi dalgalansa da kesilmesin diye önce biraz biriktiriliyor; fazla birikirse atlanıyor.
     /// </summary>
     [RequireComponent(typeof(AudioSource))]
     public class VoiceSpeaker : MonoBehaviour
     {
         const int BufferSamples = VoiceChat.SampleRate * 2;
-        // Çalmaya başlamadan önce (ve her kesintiden sonra) biriken: ~120 ms.
-        const int PrebufferSamples = VoiceChat.SampleRate * 12 / 100;
-        // Bundan fazla birikirse gecikme büyümesin diye eskiler atılıyor: ~500 ms.
-        const int MaxLatencySamples = VoiceChat.SampleRate / 2;
+        // Çalmaya başlamadan önce (ve her kesintiden sonra) biriken: ~60 ms.
+        const int PrebufferSamples = VoiceChat.SampleRate * 6 / 100;
+        // Bundan fazla birikirse gecikme büyümesin diye ön tampona kadar atlanıyor: ~160 ms.
+        const int MaxLatencySamples = VoiceChat.SampleRate * 16 / 100;
 
         readonly float[] _buffer = new float[BufferSamples];
         readonly object _lock = new object();
         int _read;
         int _count;
+        double _fraction;
+        double _step = 1.0 / 3.0;
+        float _gain = 1f;
         bool _playing;
+        AudioClip _carrier;
 
-        public void Setup(float volume, float spatialBlend, float minDistance, float maxDistance, float muffleCutoff)
+        public void Setup(float volume, float gain, float spatialBlend, float minDistance, float maxDistance, float muffleCutoff)
         {
+            int outputRate = AudioSettings.outputSampleRate;
+            _step = (double)VoiceChat.SampleRate / outputRate;
+            _gain = gain;
+
+            // Taşıyıcı: hep 1. Ses filtrede bununla çarpılıyor.
+            _carrier = AudioClip.Create("VoiceCarrier", outputRate, 1, outputRate, false);
+            var ones = new float[outputRate];
+            for (int i = 0; i < ones.Length; i++) ones[i] = 1f;
+            _carrier.SetData(ones, 0);
+
             var source = GetComponent<AudioSource>();
             source.playOnAwake = false;
             source.loop = true;
@@ -33,9 +49,10 @@ namespace Dishaster
             source.minDistance = minDistance;
             source.maxDistance = maxDistance;
             source.dopplerLevel = 0f;
-            source.clip = AudioClip.Create("Voice", VoiceChat.SampleRate, 1, VoiceChat.SampleRate, true, OnAudioRead);
+            source.clip = _carrier;
 
             // Ağzı bağlı: yüksek frekanslar gidiyor, sadece mırıltı ve tonlama kalıyor.
+            // Bu bileşenden sonra eklendiği için sesi filtreliyor.
             if (muffleCutoff > 0f)
             {
                 var lowPass = gameObject.AddComponent<AudioLowPassFilter>();
@@ -48,8 +65,7 @@ namespace Dishaster
 
         void OnDestroy()
         {
-            var source = GetComponent<AudioSource>();
-            if (source != null && source.clip != null) Destroy(source.clip);
+            if (_carrier != null) Destroy(_carrier);
         }
 
         public void Push(ArraySegment<byte> data)
@@ -73,29 +89,40 @@ namespace Dishaster
             }
         }
 
-        // Ses motoru istedikçe çağırıyor (ana iş parçacığında olmayabilir).
-        void OnAudioRead(float[] data)
+        // Ses iş parçacığında çağrılıyor; data taşıyıcının (1) çıkış kanallarına dağılmış hali.
+        void OnAudioFilterRead(float[] data, int channels)
         {
             lock (_lock)
             {
                 if (!_playing && _count >= PrebufferSamples) _playing = true;
 
-                for (int i = 0; i < data.Length; i++)
+                for (int frame = 0; frame < data.Length; frame += channels)
                 {
-                    if (_playing && _count > 0)
+                    float sample = 0f;
+                    if (_playing && _count >= 2)
                     {
-                        data[i] = _buffer[_read];
-                        _read = (_read + 1) % BufferSamples;
-                        _count--;
+                        // 16 kHz'ten çıkış hızına doğrusal ara değerle.
+                        float a = _buffer[_read];
+                        float b = _buffer[(_read + 1) % BufferSamples];
+                        sample = Mathf.Clamp((a + (b - a) * (float)_fraction) * _gain, -1f, 1f);
+
+                        _fraction += _step;
+                        while (_fraction >= 1.0 && _count > 1)
+                        {
+                            _fraction -= 1.0;
+                            _read = (_read + 1) % BufferSamples;
+                            _count--;
+                        }
                     }
                     else
                     {
-                        data[i] = 0f;
+                        // Konuşma bitti ya da ağ geç kaldı: tekrar biraz biriktirip başlıyor.
+                        _playing = false;
                     }
-                }
 
-                // Konuşma bitti ya da ağ geç kaldı: tekrar biraz biriktirip başlıyor.
-                if (_count == 0) _playing = false;
+                    for (int c = 0; c < channels; c++)
+                        data[frame + c] *= sample;
+                }
             }
         }
     }
