@@ -94,6 +94,10 @@ namespace Dishaster
         void Awake()
         {
             s_instance = this;
+
+            // Küp el artık sadece hedef (tutulan eşyalar buna bağlı): görünen el karakterin kendisi (IK) ve FPS eli.
+            foreach (Transform part in hand)
+                if (part.TryGetComponent(out Renderer renderer)) renderer.enabled = false;
         }
 
         void OnDestroy()

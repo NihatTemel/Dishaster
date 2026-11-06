@@ -26,13 +26,20 @@ namespace Dishaster
         double _step = 1.0 / 3.0;
         float _gain = 1f;
         bool _playing;
+        float _output = 1f;
+        float _level;
         AudioClip _carrier;
+
+        /// <summary>Çalınan sesin zarfı (0..1), sessiz çalınsa da: ağız buna göre oynuyor.</summary>
+        public float Level => _level;
 
         public void Setup(float volume, float gain, float spatialBlend, float minDistance, float maxDistance, float muffleCutoff)
         {
             int outputRate = AudioSettings.outputSampleRate;
             _step = (double)VoiceChat.SampleRate / outputRate;
             _gain = gain;
+            // Ses 0 da olsa kaynak çalışıyor (Unity sessiz kaynağı atlamasın diye kazanç filtrede).
+            _output = volume;
 
             // Taşıyıcı: hep 1. Ses filtrede bununla çarpılıyor.
             _carrier = AudioClip.Create("VoiceCarrier", outputRate, 1, outputRate, false);
@@ -43,7 +50,7 @@ namespace Dishaster
             var source = GetComponent<AudioSource>();
             source.playOnAwake = false;
             source.loop = true;
-            source.volume = volume;
+            source.volume = 1f;
             source.spatialBlend = spatialBlend;
             source.rolloffMode = AudioRolloffMode.Logarithmic;
             source.minDistance = minDistance;
@@ -120,6 +127,10 @@ namespace Dishaster
                         _playing = false;
                     }
 
+                    float magnitude = Mathf.Abs(sample);
+                    _level = magnitude > _level ? magnitude : _level * 0.9997f;
+
+                    sample *= _output;
                     for (int c = 0; c < channels; c++)
                         data[frame + c] *= sample;
                 }

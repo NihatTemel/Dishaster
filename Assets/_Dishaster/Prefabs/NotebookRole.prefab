@@ -3742,7 +3742,7 @@ MonoBehaviour:
   drawRotation: {x: 0, y: 0, z: 0}
   showHand: {x: -0.08, y: -0.1, z: 0.55}
   showRotation: {x: 0, y: 180, z: 0}
-  remoteForward: 0.3
+  remoteForward: 0.1
   penLift: {x: 0, y: 0, z: -0.004}
   penRest: {x: 0.4, y: -0.25, z: -0.12}
   prompt: {fileID: 6873086719112800149}

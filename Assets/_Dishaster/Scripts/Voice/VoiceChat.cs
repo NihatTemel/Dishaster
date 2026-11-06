@@ -76,6 +76,7 @@ namespace Dishaster
         float _lastMicSample;
         float _gateUntil = float.NegativeInfinity;
         float _gain = 2f;
+        float _localLevel;
         bool _shownSpeaking;
 
         void Awake()
@@ -103,6 +104,7 @@ namespace Dishaster
             if (_mic != null) CaptureMicrophone();
 
             bool speaking = Time.time < _gateUntil;
+            if (!speaking) _localLevel = Mathf.MoveTowards(_localLevel, 0f, Time.deltaTime * 4f);
             if (status != null && speaking != _shownSpeaking)
             {
                 _shownSpeaking = speaking;
@@ -193,6 +195,9 @@ namespace Dishaster
             for (int i = 0; i < ChunkSamples; i++)
                 _encoded[i] = MuLaw.Encode(Mathf.Clamp(_chunk[i] * _gain, -1f, 1f));
 
+            // Kendi karakterinin ağzı için (gölgede de, ileride aynada da).
+            _localLevel = Mathf.Clamp01(peak * _gain);
+
             NetworkClient.Send(new VoiceMessage { data = new ArraySegment<byte>(_encoded) }, Channels.Unreliable);
         }
 
@@ -200,7 +205,8 @@ namespace Dishaster
 
         void Receive(uint speakerId, ArraySegment<byte> data)
         {
-            if (!_canHear || data.Count == 0) return;
+            // Duymadım da konuşmayı duymuyor ama ağızların oynadığını görüyor: sessiz çalınıyor.
+            if (data.Count == 0) return;
             if (!NetworkClient.spawned.TryGetValue(speakerId, out NetworkIdentity identity) || identity == null) return;
             if (!identity.TryGetComponent(out DishasterPlayer speaker)) return;
 
@@ -221,8 +227,17 @@ namespace Dishaster
 
             var voice = go.AddComponent<VoiceSpeaker>();
             bool muffled = MonkeyRoles.IsMouthTied(speaker.role);
-            voice.Setup(volume, muffled ? muffleGain : 1f, spatialBlend, minDistance, maxDistance, muffled ? muffleCutoff : 0f);
+            voice.Setup(_canHear ? volume : 0f, muffled ? muffleGain : 1f, spatialBlend, minDistance, maxDistance, muffled ? muffleCutoff : 0f);
             return voice;
+        }
+
+        /// <summary>Oyuncunun o anki konuşma seviyesi (0..1): karakterin ağzı buna göre açılıyor.</summary>
+        public static float LevelOf(DishasterPlayer player)
+        {
+            if (s_instance == null || player == null) return 0f;
+            if (player.isLocalPlayer) return s_instance._localLevel;
+
+            return s_instance._speakers.TryGetValue(player.netId, out VoiceSpeaker voice) && voice != null ? voice.Level : 0f;
         }
 
         // ── AĞ ──────────────────────────────────────────────────────────────

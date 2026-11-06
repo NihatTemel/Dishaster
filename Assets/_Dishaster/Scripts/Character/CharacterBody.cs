@@ -1,0 +1,195 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace Dishaster
+{
+    /// <summary>
+    /// Oyuncunun üstündeki karakter modeli (CharacterVisuals giydiriyor). Humanoid IK ile: kafa oyuncunun baktığı
+    /// yere dönüyor, eller rolün işine uzanıyor (Bilmiyorum defteri sol eliyle tutuyor, çizerken sağ eli kalemde;
+    /// Görmedim'in sağ eli dokunduğu yerde), boşta eller kalça yanında. LateUpdate'te göz kırpma ve sesle ağız
+    /// (KARAKTERLER.md: kapalı ağız MBP=100, MBP+OO+EE en çok 100; Çizer'in ağzı bantlı, hep kapalı).
+    /// </summary>
+    [RequireComponent(typeof(Animator))]
+    public class CharacterBody : MonoBehaviour
+    {
+        const string VisemeClosed = "Viseme_MBP";
+        const string VisemeOpen = "Viseme_OO";
+        const string VisemeWide = "Viseme_EE";
+
+        // Kalça yanı (ayak tabanına göre, metre): boştaki eller.
+        static readonly Vector3 IdleHand = new Vector3(0.24f, 0.86f, 0.04f);
+
+        struct Face
+        {
+            public SkinnedMeshRenderer renderer;
+            public int closed;
+            public int open;
+            public int wide;
+        }
+
+        readonly List<Face> _faces = new List<Face>();
+
+        DishasterPlayer _player;
+        Animator _animator;
+        Transform _lidL;
+        Transform _lidR;
+        Quaternion _lidRestL;
+        Quaternion _lidRestR;
+        float _lidAngle;
+        bool _mouthTied;
+
+        float _nextBlink;
+        float _blinkTime = -1f;
+        float _openness;
+
+        public DishasterPlayer Player => _player;
+
+        public void Setup(DishasterPlayer player, RuntimeAnimatorController controller, float lidAngle, bool mouthTied)
+        {
+            _player = player;
+            _lidAngle = lidAngle;
+            _mouthTied = mouthTied;
+
+            _animator = GetComponent<Animator>();
+            _animator.runtimeAnimatorController = controller;
+            _animator.applyRootMotion = false;
+            _animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+
+            _lidL = FindBone(transform, "Lid_L");
+            _lidR = FindBone(transform, "Lid_R");
+            if (_lidL != null) _lidRestL = _lidL.localRotation;
+            if (_lidR != null) _lidRestR = _lidR.localRotation;
+
+            // Ağız şekilleri birden çok parçada olabiliyor (Aşçı'da kafa ve kollar): ada göre hepsine.
+            foreach (SkinnedMeshRenderer renderer in GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                Mesh mesh = renderer.sharedMesh;
+                if (mesh == null) continue;
+
+                int closed = mesh.GetBlendShapeIndex(VisemeClosed);
+                if (closed < 0) continue;
+
+                _faces.Add(new Face
+                {
+                    renderer = renderer,
+                    closed = closed,
+                    open = mesh.GetBlendShapeIndex(VisemeOpen),
+                    wide = mesh.GetBlendShapeIndex(VisemeWide),
+                });
+            }
+
+            _nextBlink = Time.time + Random.Range(1f, 4f);
+            ApplyMouth(0f);
+        }
+
+        internal static Transform FindBone(Transform root, string name)
+        {
+            if (root.name == name) return root;
+
+            foreach (Transform child in root)
+            {
+                Transform found = FindBone(child, name);
+                if (found != null) return found;
+            }
+
+            return null;
+        }
+
+        // ── IK ──────────────────────────────────────────────────────────────
+
+        void OnAnimatorIK(int layerIndex)
+        {
+            if (_player == null) return;
+
+            // Kafa ve biraz da gövde bakışı izliyor.
+            Transform head = _player.headPivot;
+            _animator.SetLookAtWeight(1f, 0.25f, 0.9f, 0f, 0.6f);
+            _animator.SetLookAtPosition(head.position + head.forward * 3f);
+
+            GetHandTargets(out Vector3? left, out Vector3? right);
+            SetHand(AvatarIKGoal.LeftHand, left ?? transform.TransformPoint(new Vector3(-IdleHand.x, IdleHand.y, IdleHand.z)));
+            SetHand(AvatarIKGoal.RightHand, right ?? transform.TransformPoint(IdleHand));
+        }
+
+        void SetHand(AvatarIKGoal goal, Vector3 position)
+        {
+            _animator.SetIKPositionWeight(goal, 1f);
+            _animator.SetIKPosition(goal, position);
+        }
+
+        /// <summary>Rolün o anki işi: elin gitmesi gereken yer (yoksa boşta).</summary>
+        void GetHandTargets(out Vector3? left, out Vector3? right)
+        {
+            left = null;
+            right = null;
+
+            NotebookRole notebook = NotebookRole.Instance;
+            if (notebook != null && notebook.Owner == _player)
+            {
+                left = notebook.LeftGripPoint;
+                if (notebook.IsDrawing) right = notebook.PenGripPoint;
+                return;
+            }
+
+            if (_player.role == MonkeyRoles.LowVision)
+            {
+                Transform hand = LowVisionRole.Hand;
+                if (hand != null && hand.gameObject.activeInHierarchy) right = hand.position;
+            }
+        }
+
+        // ── YÜZ ─────────────────────────────────────────────────────────────
+
+        // LateUpdate: Animator kapakları ve ağzı ezmesin.
+        void LateUpdate()
+        {
+            UpdateBlink();
+
+            float level = _mouthTied ? 0f : VoiceChat.LevelOf(_player);
+            float target = Mathf.Clamp01((level - 0.02f) * 5f);
+            // Açılış hızlı, kapanış biraz yavaş: kelimeler arası titremesin.
+            _openness = Mathf.MoveTowards(_openness, target, Time.deltaTime * (target > _openness ? 14f : 7f));
+            ApplyMouth(_openness);
+        }
+
+        void UpdateBlink()
+        {
+            if (_lidL == null && _lidR == null) return;
+
+            float blink = 0f;
+            if (_blinkTime < 0f && Time.time >= _nextBlink) _blinkTime = 0f;
+
+            if (_blinkTime >= 0f)
+            {
+                // Kapanma 0.06 sn, kapalı 0.04 sn, açılma 0.09 sn.
+                _blinkTime += Time.deltaTime;
+                float t = _blinkTime;
+                blink = t < 0.06f ? t / 0.06f : t < 0.1f ? 1f : 1f - (t - 0.1f) / 0.09f;
+
+                if (t >= 0.19f)
+                {
+                    blink = 0f;
+                    _blinkTime = -1f;
+                    _nextBlink = Time.time + Random.Range(2f, 6f);
+                }
+            }
+
+            blink = Mathf.Clamp01(blink);
+            if (_lidL != null) _lidL.localRotation = _lidRestL * Quaternion.AngleAxis(_lidAngle * blink, Vector3.right);
+            if (_lidR != null) _lidR.localRotation = _lidRestR * Quaternion.AngleAxis(_lidAngle * blink, Vector3.right);
+        }
+
+        void ApplyMouth(float openness)
+        {
+            float oo = Mathf.Clamp01(openness);
+            foreach (Face face in _faces)
+            {
+                if (face.renderer == null) continue;
+
+                face.renderer.SetBlendShapeWeight(face.closed, (1f - oo) * 100f);
+                if (face.open >= 0) face.renderer.SetBlendShapeWeight(face.open, oo * 100f);
+                if (face.wide >= 0) face.renderer.SetBlendShapeWeight(face.wide, 0f);
+            }
+        }
+    }
+}

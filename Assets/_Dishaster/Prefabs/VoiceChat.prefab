@@ -233,10 +233,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   gateThreshold: 0.012
   gateHoldSeconds: 0.35
+  targetPeak: 0.6
+  maxGain: 8
   volume: 1
   spatialBlend: 0.6
   minDistance: 6
   maxDistance: 40
   muffleCutoff: 350
+  muffleGain: 2.2
   deafHearsVoice: 0
   status: {fileID: 5879292208724652743}

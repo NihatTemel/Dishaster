@@ -42,6 +42,24 @@ namespace Dishaster
 
         static NotebookRole s_instance;
 
+        public static NotebookRole Instance => s_instance;
+
+        /// <summary>Defteri tutan Bilmiyorum (henüz doğmadıysa ya da düştüyse null).</summary>
+        public DishasterPlayer Owner => _owner;
+
+        public bool IsDrawing => _owner != null && _pose == NotebookPose.Draw;
+
+        /// <summary>Sol avucun defterdeki yeri (karakterin eli ve FPS eli buraya geliyor).</summary>
+        public Vector3 LeftGripPoint => leftHand.position;
+
+        /// <summary>Kalemi tutan avucun yeri: kalemin ortasından biraz yukarısı.</summary>
+        public Vector3 PenGripPoint => _pencil != null ? _pencil.position + _pencil.up * 0.03f : rightHand.position;
+
+        /// <summary>FPS sol elinin, tutma duruşuna göre defterle birlikte dönmesi.</summary>
+        public Quaternion LeftHandTurn => _owner != null
+            ? notebook.rotation * Quaternion.Inverse(_owner.headPivot.rotation * Quaternion.Euler(holdRotation))
+            : Quaternion.identity;
+
         [Header("Referanslar")]
         public Transform rig;
         public Transform notebook;
@@ -60,7 +78,7 @@ namespace Dishaster
         public Vector3 showHand = new Vector3(-0.08f, -0.1f, 0.55f);
         public Vector3 showRotation = new Vector3(0f, 180f, 0f);
         [Tooltip("Diğer oyuncularda defter bu kadar öne alınıyor: gövdenin (kapsül) içinde kalmasın.")]
-        public float remoteForward = 0.3f;
+        public float remoteForward = 0.1f;
 
         [Header("Sağ el (deftere göre)")]
         public Vector3 penLift = new Vector3(0f, 0f, -0.004f);
@@ -78,6 +96,7 @@ namespace Dishaster
         public Button closeButton;
 
         DishasterPlayer _owner;
+        Transform _pencil;
         bool _isLocal;
         NotebookPose _pose = NotebookPose.Hold;
         Vector2 _penUv = new Vector2(0.5f, 0.5f);
@@ -101,6 +120,13 @@ namespace Dishaster
             toolbar.SetActive(false);
             prompt.SetActive(false);
             rightHand.gameObject.SetActive(false);
+
+            // Küp eller artık sadece hedef: görünen eller karakterin kendisi (IK) ve FPS elleri. Kalem kalıyor.
+            _pencil = CharacterBody.FindBone(rightHand, "Pencil");
+            foreach (Renderer part in leftHand.GetComponentsInChildren<Renderer>(true))
+                part.enabled = false;
+            foreach (Renderer part in rightHand.GetComponentsInChildren<Renderer>(true))
+                if (_pencil == null || part.transform != _pencil) part.enabled = false;
         }
 
         void OnDestroy()
