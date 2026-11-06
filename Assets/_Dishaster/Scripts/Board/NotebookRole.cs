@@ -24,8 +24,9 @@ namespace Dishaster
 
     /// <summary>
     /// Bilmiyorum'un defteri (prefab). Bilmiyorum'un kafasını izliyor; kendi ekranında bilekten sonrası eller ve
-    /// defter görünüyor. Normalde defter aşağıda tutuluyor; E ile yüze kaldırılıp imleçle çiziliyor (sağ el kalem
-    /// tutuyor), sağ tık basılıyken çevrilip karşıya gösteriliyor. Eller deftere bağlı, duruşa göre geçiyor.
+    /// defter görünüyor. Defteri hep sol el, sol kenarından tek başına tutuyor: normalde aşağıda; E ile yüze
+    /// kaldırılıp imleçle çiziliyor (sağ el kalemle gelip çiziyor); sağ tık basılıyken sol el defteri çevirip
+    /// karşıya gösteriyor (defter elin etrafında dönüyor). Sağ el sadece çizerken görünüyor.
     /// Duruş ve kalem Mirror mesajıyla gidiyor; çizgiler DrawingBoard'un mesajlarıyla. Diğerleri de defteri ve
     /// elleri görüyor: sahne objesi olduğu için NetworkIdentity gerekmiyor.
     /// </summary>
@@ -47,27 +48,24 @@ namespace Dishaster
         public DrawingBoard page;
         public Transform leftHand;
         public Transform rightHand;
-        [Tooltip("Sağ elin kenarı kavrayan hali.")]
-        public GameObject rightGrip;
-        [Tooltip("Sağ elin kalem tutan hali.")]
-        public GameObject rightPen;
 
         [Header("Defter (metre)")]
         public Vector2 pageSize = new Vector2(0.5f, 0.25f);
 
-        [Header("Duruşlar (kafaya göre)")]
-        public Vector3 holdPosition = new Vector3(0f, -0.25f, 0.42f);
+        [Header("Duruşlar: sol elin yeri (kafaya göre) ve defterin dönüşü")]
+        public Vector3 holdHand = new Vector3(-0.2f, -0.26f, 0.42f);
         public Vector3 holdRotation = new Vector3(40f, 0f, 0f);
-        public Vector3 drawPosition = new Vector3(0f, 0.015f, 0.3f);
+        public Vector3 drawHand = new Vector3(-0.25f, 0.015f, 0.3f);
         public Vector3 drawRotation = Vector3.zero;
-        public Vector3 showPosition = new Vector3(0f, -0.14f, 0.55f);
+        public Vector3 showHand = new Vector3(-0.08f, -0.1f, 0.55f);
         public Vector3 showRotation = new Vector3(0f, 180f, 0f);
         [Tooltip("Diğer oyuncularda defter bu kadar öne alınıyor: gövdenin (kapsül) içinde kalmasın.")]
         public float remoteForward = 0.3f;
 
-        [Header("Eller (deftere göre)")]
-        public Vector3 rightGripPosition = new Vector3(0.25f, -0.03f, 0f);
+        [Header("Sağ el (deftere göre)")]
         public Vector3 penLift = new Vector3(0f, 0f, -0.004f);
+        [Tooltip("Çizime başlarken sağ el buradan (sağ alttan) gelip kaleme gidiyor.")]
+        public Vector3 penRest = new Vector3(0.4f, -0.25f, -0.12f);
 
         [Header("UI")]
         public GameObject prompt;
@@ -83,7 +81,7 @@ namespace Dishaster
         bool _isLocal;
         NotebookPose _pose = NotebookPose.Hold;
         Vector2 _penUv = new Vector2(0.5f, 0.5f);
-        Vector3 _localPosition;
+        Vector3 _handPosition;
         Quaternion _localRotation;
         float _drawBlend;
         bool _placed;
@@ -102,7 +100,7 @@ namespace Dishaster
             rig.gameObject.SetActive(false);
             toolbar.SetActive(false);
             prompt.SetActive(false);
-            ApplyHandVisuals();
+            rightHand.gameObject.SetActive(false);
         }
 
         void OnDestroy()
@@ -237,16 +235,14 @@ namespace Dishaster
 
         void SetPose(NotebookPose pose)
         {
+            bool wasDrawing = _pose == NotebookPose.Draw;
             _pose = pose;
             if (pose != NotebookPose.Draw) _drawBlend = 0f;
-            ApplyHandVisuals();
-        }
 
-        void ApplyHandVisuals()
-        {
-            bool pen = _pose == NotebookPose.Draw;
-            rightGrip.SetActive(!pen);
-            rightPen.SetActive(pen);
+            // Sağ el sadece çizerken: sağ alttan gelip kaleme gidiyor.
+            bool drawing = pose == NotebookPose.Draw;
+            if (drawing && !wasDrawing) rightHand.localPosition = penRest;
+            rightHand.gameObject.SetActive(drawing);
         }
 
         void UpdateDrawing()
@@ -324,54 +320,60 @@ namespace Dishaster
         {
             if (_owner == null) return;
 
-            Vector3 targetPosition;
+            Vector3 targetHand;
             Vector3 targetRotation;
             switch (_pose)
             {
                 case NotebookPose.Draw:
-                    targetPosition = drawPosition;
+                    targetHand = drawHand;
                     targetRotation = drawRotation;
                     break;
                 case NotebookPose.Show:
-                    targetPosition = showPosition;
+                    targetHand = showHand;
                     targetRotation = showRotation;
                     break;
                 default:
-                    targetPosition = holdPosition;
+                    targetHand = holdHand;
                     targetRotation = holdRotation;
                     break;
             }
 
-            if (!_isLocal) targetPosition.z += remoteForward;
+            if (!_isLocal) targetHand.z += remoteForward;
             Quaternion targetQuaternion = Quaternion.Euler(targetRotation);
 
+            // Sol el ve defterin dönüşü ayrı yumuşuyor: çevirirken defter elin etrafında dönüyor.
             float blend = 1f - Mathf.Exp(-PoseSpeed * Time.deltaTime);
             if (!_placed)
             {
                 _placed = true;
-                _localPosition = targetPosition;
+                _handPosition = targetHand;
                 _localRotation = targetQuaternion;
             }
             else
             {
-                _localPosition = Vector3.Lerp(_localPosition, targetPosition, blend);
+                _handPosition = Vector3.Lerp(_handPosition, targetHand, blend);
                 _localRotation = Quaternion.Slerp(_localRotation, targetQuaternion, blend);
             }
 
             if (_pose == NotebookPose.Draw)
-                _drawBlend = Mathf.Max(_drawBlend, 1f - Vector3.Distance(_localPosition, targetPosition) / 0.05f);
+            {
+                float settle = Mathf.Max(Vector3.Distance(_handPosition, targetHand) / 0.05f, Quaternion.Angle(_localRotation, targetQuaternion) / 10f);
+                _drawBlend = Mathf.Max(_drawBlend, 1f - settle);
+            }
 
+            // Defter, tutma noktası (sol elin yeri) elde olacak şekilde konuyor.
+            Vector3 localPosition = _handPosition - _localRotation * leftHand.localPosition;
             Transform head = _owner.headPivot;
-            notebook.SetPositionAndRotation(head.TransformPoint(_localPosition), head.rotation * _localRotation);
+            notebook.SetPositionAndRotation(head.TransformPoint(localPosition), head.rotation * _localRotation);
 
             UpdateRightHand();
         }
 
         void UpdateRightHand()
         {
-            Vector3 target = _pose == NotebookPose.Draw
-                ? new Vector3((_penUv.x - 0.5f) * pageSize.x, (_penUv.y - 0.5f) * pageSize.y, 0f) + penLift
-                : rightGripPosition;
+            if (_pose != NotebookPose.Draw) return;
+
+            Vector3 target = new Vector3((_penUv.x - 0.5f) * pageSize.x, (_penUv.y - 0.5f) * pageSize.y, 0f) + penLift;
 
             float blend = 1f - Mathf.Exp(-HandSpeed * Time.deltaTime);
             rightHand.localPosition = Vector3.Lerp(rightHand.localPosition, target, blend);

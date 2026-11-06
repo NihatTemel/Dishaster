@@ -7,14 +7,14 @@ using UnityEngine.UI;
 namespace Dishaster.EditorTools
 {
     /// <summary>
-    /// Bilmiyorum'un defterini (NotebookRole prefab: defter, bilekten sonrası iki el, çizim toolbar'ı) oluşturur ve
+    /// Bilmiyorum'un defterini (NotebookRole prefab: defter, onu tutan sol el, kalem tutan sağ el, çizim toolbar'ı) oluşturur ve
     /// Game sahnesine koyar. Eski duvar tahtasını (DrawingBoard prefab) sahneden ve projeden kaldırır.
     /// Version değişince kendiliğinden yeniden kurar.
     /// </summary>
     [InitializeOnLoad]
     public static class NotebookInstaller
     {
-        const string Version = "1";
+        const string Version = "2";
         const string VersionFile = "ProjectSettings/DishasterNotebook.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/NotebookRole.prefab";
         const string PageMaterialPath = "Assets/_Dishaster/Materials/M_NotebookPage.mat";
@@ -107,15 +107,16 @@ namespace Dishaster.EditorTools
 
             Material skin = DishasterSceneBuilder.GetMaterial("M_Hand", new Color(0.85f, 0.70f, 0.58f));
 
+            // Defteri tek başına tutan sol el: sol kenarın ortasından.
             role.leftHand = BuildGripHand(notebook.transform, "LeftHand", -1f, skin).transform;
-            role.leftHand.localPosition = new Vector3(-role.rightGripPosition.x, role.rightGripPosition.y, 0f);
+            role.leftHand.localPosition = new Vector3(-PageSize.x / 2f, 0f, 0f);
 
+            // Sağ el sadece çizerken açılıyor; kök kalemin ucu.
             var rightHand = new GameObject("RightHand");
             rightHand.transform.SetParent(notebook.transform, false);
-            rightHand.transform.localPosition = role.rightGripPosition;
+            rightHand.transform.localPosition = role.penRest;
             role.rightHand = rightHand.transform;
-            role.rightGrip = BuildGripHand(rightHand.transform, "Grip", 1f, skin);
-            role.rightPen = BuildPenHand(rightHand.transform, skin);
+            BuildPenHand(rightHand.transform, skin);
 
             Transform canvas = DishasterSceneBuilder.AddCanvas();
             canvas.name = "Canvas";
@@ -195,7 +196,6 @@ namespace Dishaster.EditorTools
             AddPart(hand.transform, "IndexFinger", direction * 0.05f + new Vector3(0.004f, 0.006f, 0f), new Vector3(0.017f, 0.017f, 0.06f), along, skin);
             AddPart(hand.transform, "Thumb", direction * 0.055f + new Vector3(-0.012f, -0.004f, 0f), new Vector3(0.018f, 0.018f, 0.05f), along, skin);
 
-            hand.SetActive(false);
             return hand;
         }
 
