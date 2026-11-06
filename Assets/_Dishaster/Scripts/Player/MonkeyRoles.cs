@@ -27,7 +27,7 @@ namespace Dishaster
 
         public static Color ColorOf(int role) => Colors[Mathf.Clamp(role, 0, Count - 1)];
 
-        /// <summary>Konuşamayan oyuncu anlatmak için tahtaya çiziyor.</summary>
+        /// <summary>Konuşamayan oyuncu anlatmak için elindeki deftere çiziyor.</summary>
         public static bool CanDraw(int role) => role == Mute;
     }
 }

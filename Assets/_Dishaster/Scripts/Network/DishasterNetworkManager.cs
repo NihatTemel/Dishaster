@@ -295,6 +295,7 @@ namespace Dishaster
         public override void OnRoomStartServer()
         {
             DrawingBoard.RegisterServerHandlers();
+            NotebookRole.RegisterServerHandlers();
             LowVisionRole.RegisterServerHandlers();
             KitchenCounter.RegisterServerHandlers();
         }
@@ -302,6 +303,7 @@ namespace Dishaster
         public override void OnRoomStartClient()
         {
             DrawingBoard.RegisterClientHandlers();
+            NotebookRole.RegisterClientHandlers();
             LowVisionRole.RegisterClientHandlers();
             KitchenCounter.RegisterClientHandlers();
         }

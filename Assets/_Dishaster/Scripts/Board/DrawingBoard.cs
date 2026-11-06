@@ -15,7 +15,7 @@ namespace Dishaster
     public struct BoardClearMessage : NetworkMessage { }
 
     /// <summary>
-    /// Tahtanın görüntüsü ve ağ senkronu. Çizen oyuncu kendi ekranına hemen çiziyor, sunucu tipini
+    /// Bilmiyorum'un defter sayfasının (bkz. NotebookRole) görüntüsü ve ağ senkronu. Çizen oyuncu kendi ekranına hemen çiziyor, sunucu tipini
     /// kontrol edip çizgiyi diğerlerine dağıtıyor. Sahne objesi olduğu için NetworkIdentity gerekmesin
     /// diye Mirror mesajları kullanılıyor; oyun başladıktan sonra odaya kimse katılamadığı için
     /// geç gelene geçmiş çizgileri göndermek gerekmiyor.

@@ -6,7 +6,7 @@ using UnityEngine;
 namespace Dishaster
 {
     /// <summary>
-    /// Tarif kartı, tarif bozulunca çıkan uyarı ve dökme göstergesi (prefab). Kartı sadece Bilmiyorum görüyor: tahtaya
+    /// Tarif kartı, tarif bozulunca çıkan uyarı ve dökme göstergesi (prefab). Kartı sadece Bilmiyorum görüyor: deftere
     /// çizip Duymadım'a anlatıyor, o da Görmedim'e söylüyor. Uyarıyı herkes görüyor. Dökme göstergesi kaba ne kadar
     /// girdiğini gösteriyor; görmeyen hiç görmüyor.
     /// </summary>

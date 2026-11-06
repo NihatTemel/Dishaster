@@ -103,7 +103,7 @@ namespace Dishaster.EditorTools
             File.WriteAllText(VersionFile, BuilderVersion);
 
             // Prefab olarak eklenenler; Game yeniden yaratilinca geri konuyor.
-            DrawingBoardInstaller.PlaceInGameScene();
+            NotebookInstaller.PlaceInGameScene();
             KitchenCounterInstaller.PlaceInGameScene();
             PantryInstaller.PlaceInGameScene();
             LowVisionInstaller.PlaceInGameScene();
