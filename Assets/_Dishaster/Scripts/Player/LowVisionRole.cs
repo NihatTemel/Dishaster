@@ -131,6 +131,10 @@ namespace Dishaster
             _aimPoint = hand.position;
             hand.gameObject.SetActive(true);
             boardBarrier.enabled = true;
+
+            // Test: normal görüş, nişangah da kalıyor (bkz. DishasterTest).
+            if (DishasterTest.LowVisionSeesEverything) return;
+
             player.playerCamera.gameObject.AddComponent<LowVisionEffect>().Setup(this);
             // Kaplardaki miktar ve akıntı bu kamerada hiç çizilmiyor (hat olarak da çıkmıyor).
             BlindHiddenLayer.HideFrom(player.playerCamera);

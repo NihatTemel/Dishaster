@@ -42,8 +42,10 @@ namespace Dishaster
                 if (NetworkClient.localPlayer == null || !NetworkClient.localPlayer.TryGetComponent(out DishasterPlayer player)) return;
 
                 _roleResolved = true;
-                _showRecipe = player.role == MonkeyRoles.Mute;
-                _isLowVision = player.role == MonkeyRoles.LowVision;
+                // Test: Görmedim de kartı ve dökme göstergesini görüyor (bkz. DishasterTest).
+                bool testSees = DishasterTest.LowVisionSeesEverything && player.role == MonkeyRoles.LowVision;
+                _showRecipe = player.role == MonkeyRoles.Mute || testSees;
+                _isLowVision = player.role == MonkeyRoles.LowVision && !testSees;
                 _shownVersion = -1;
             }
 
