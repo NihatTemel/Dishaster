@@ -18,6 +18,10 @@ namespace Dishaster
 
         static readonly Vector3 CameraOffset = new Vector3(0f, -1.60f, -0.06f);
 
+        // Kameraya göre omuzlar: hedefe giden el buradan uzanıyormuş gibi yöneliyor, bilek kapağı ekran dışında kalıyor.
+        static readonly Vector3 LeftShoulder = new Vector3(-0.22f, -0.34f, -0.05f);
+        static readonly Vector3 RightShoulder = new Vector3(0.22f, -0.34f, -0.05f);
+
         class Hand
         {
             public Transform foreArm;
@@ -104,8 +108,9 @@ namespace Dishaster
             Reset(_right);
             _poses.SampleAnimation(gameObject, frame / FrameRate);
 
-            Place(_left, showLeft, left, leftTurn);
-            Place(_right, showRight, right, Quaternion.identity);
+            Transform view = _player.playerCamera.transform;
+            Place(_left, showLeft, left, leftTurn, view.TransformPoint(LeftShoulder));
+            Place(_right, showRight, right, Quaternion.identity, view.TransformPoint(RightShoulder));
         }
 
         static void Reset(Hand hand)
@@ -114,7 +119,7 @@ namespace Dishaster
             hand.foreArm.localRotation = hand.restRotation;
         }
 
-        static void Place(Hand hand, bool visible, Vector3? target, Quaternion turn)
+        static void Place(Hand hand, bool visible, Vector3? target, Quaternion turn, Vector3 shoulder)
         {
             // Gizlemek: ön kol (ve altındaki el) sıfıra ölçekleniyor.
             hand.foreArm.localScale = visible ? Vector3.one : Vector3.zero;
@@ -122,6 +127,15 @@ namespace Dishaster
 
             Vector3 palm = hand.Palm;
             Transform foreArm = hand.foreArm;
+
+            // Bilekten parmaklara doğru eksen, omuzdan hedefe bakacak şekilde çevriliyor (defterin dönüşü üstüne).
+            if (hand.knuckle != null)
+            {
+                Vector3 along = turn * (hand.knuckle.position - hand.wrist.position);
+                Vector3 reach = target.Value - shoulder;
+                if (along.sqrMagnitude > 1e-6f && reach.sqrMagnitude > 1e-6f)
+                    turn = Quaternion.FromToRotation(along, reach) * turn;
+            }
 
             // Avucun etrafında dön, sonra avucu hedefe taşı.
             foreArm.SetPositionAndRotation(palm + turn * (foreArm.position - palm), turn * foreArm.rotation);

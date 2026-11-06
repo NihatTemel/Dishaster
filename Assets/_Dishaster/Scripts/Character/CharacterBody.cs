@@ -37,6 +37,10 @@ namespace Dishaster
         Quaternion _lidRestR;
         float _lidAngle;
         bool _mouthTied;
+        float _bodyHeight;
+        Transform _footL;
+        Transform _footR;
+        float _footHeight;
 
         float _nextBlink;
         float _blinkTime = -1f;
@@ -49,6 +53,16 @@ namespace Dishaster
             _player = player;
             _lidAngle = lidAngle;
             _mouthTied = mouthTied;
+
+            // Klip olmadan Humanoid kalçayı köke (ayak tabanına) koyuyor, karakter yere gömülüyordu:
+            // dinlenme pozundaki kalça yüksekliği saklanıp her kare gövde oraya konuyor.
+            Transform hips = FindBone(transform, "Hips");
+            _bodyHeight = hips != null ? transform.InverseTransformPoint(hips.position).y : 0.95f;
+
+            // Gövde merkezi kalçadan biraz farklı: ayaklar dinlenme pozundaki yüksekliğe gelene kadar düzeltiliyor.
+            _footL = FindBone(transform, "LeftFoot");
+            _footR = FindBone(transform, "RightFoot");
+            if (_footL != null && _footR != null) _footHeight = Mathf.Min(FootY(_footL), FootY(_footR));
 
             _animator = GetComponent<Animator>();
             _animator.runtimeAnimatorController = controller;
@@ -101,6 +115,9 @@ namespace Dishaster
         {
             if (_player == null) return;
 
+            _animator.bodyPosition = transform.TransformPoint(new Vector3(0f, _bodyHeight, 0f));
+            _animator.bodyRotation = transform.rotation;
+
             // Kafa ve biraz da gövde bakışı izliyor.
             Transform head = _player.headPivot;
             _animator.SetLookAtWeight(1f, 0.25f, 0.9f, 0f, 0.6f);
@@ -141,8 +158,13 @@ namespace Dishaster
         // ── YÜZ ─────────────────────────────────────────────────────────────
 
         // LateUpdate: Animator kapakları ve ağzı ezmesin.
+        float FootY(Transform foot) => transform.InverseTransformPoint(foot.position).y;
+
         void LateUpdate()
         {
+            if (_footL != null && _footR != null)
+                _bodyHeight += (_footHeight - Mathf.Min(FootY(_footL), FootY(_footR))) * 0.5f;
+
             UpdateBlink();
 
             float level = _mouthTied ? 0f : VoiceChat.LevelOf(_player);
