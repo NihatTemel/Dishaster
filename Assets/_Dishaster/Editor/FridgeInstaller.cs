@@ -11,7 +11,7 @@ namespace Dishaster.EditorTools
     [InitializeOnLoad]
     public static class FridgeInstaller
     {
-        const string Version = "1";
+        const string Version = "2";
         const string VersionFile = "ProjectSettings/DishasterFridge.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/Fridge.prefab";
 
@@ -34,6 +34,7 @@ namespace Dishaster.EditorTools
             length = 0.045f, radius = 0.019f, slices = 4,
             stem = new Color(0.20f, 0.45f, 0.15f),
             profile = t => PantryInstaller.Round(t) * (0.5f + 0.5f * t),
+            sliceIngredient = Ingredient.Strawberry,
         };
 
         static FridgeInstaller()

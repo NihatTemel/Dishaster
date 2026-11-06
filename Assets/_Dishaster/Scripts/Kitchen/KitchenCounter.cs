@@ -90,7 +90,7 @@ namespace Dishaster
         readonly List<KitchenEventMessage> _log = new List<KitchenEventMessage>();
         readonly HashSet<NetworkConnectionToClient> _readyClients = new HashSet<NetworkConnectionToClient>();
         readonly List<KitchenDoor> _doors = new List<KitchenDoor>();
-        readonly CakeRecipe _recipe = new CakeRecipe();
+        readonly Recipe _recipe = new Recipe();
 
         KitchenContainer _bowl;
         float _nextPourSend;
@@ -103,7 +103,7 @@ namespace Dishaster
 
         public KitchenItem Held => _held;
 
-        public CakeRecipe Recipe => _recipe;
+        public Recipe Recipe => _recipe;
 
         // Son dökme ya da kaseye ekleme (dökme göstergesi için). Kaynak yoksa tane tane eklendi; hedef yoksa yere döküldü.
         public KitchenContainer PourSource { get; private set; }
@@ -143,7 +143,7 @@ namespace Dishaster
                 _doors[i].Id = i;
 
             // Miktarları sunucu seçiyor; istemciler hazır olunca alıyor.
-            if (NetworkServer.active) _recipe.SetTargets(CakeRecipe.Roll());
+            if (NetworkServer.active) _recipe.SetTargets(Recipe.Roll());
         }
 
         static int ComparePosition(KitchenItem a, KitchenItem b) => ComparePosition(a.transform, b.transform);
@@ -437,7 +437,11 @@ namespace Dishaster
                     item.Container.MarkPouring();
                     if (target != null) target.AddMix(poured);
                     NotePour(item.Container, target, Ingredients.MainOf(poured), target == null ? message.amount : 0f);
-                    if (target != null && target == _bowl) _recipe.Check(_bowl);
+                    if (target != null && target == _bowl)
+                    {
+                        _recipe.CheckPour(item.Container, poured);
+                        _recipe.Check(_bowl);
+                    }
                     break;
 
                 case KitchenEventType.AddToBowl:

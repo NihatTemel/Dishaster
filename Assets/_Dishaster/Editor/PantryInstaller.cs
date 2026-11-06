@@ -59,6 +59,8 @@ namespace Dishaster.EditorTools
             public bool lengthwiseInCrate;
             public Color? stem;
             public Func<float, float> profile;
+            // Dilimi kaseye tane tane giriyorsa (çilek).
+            public Ingredient? sliceIngredient;
         }
 
         internal static float Round(float t) => Mathf.Sqrt(Mathf.Max(0f, 1f - Square(2f * t - 1f)));
@@ -326,6 +328,13 @@ namespace Dishaster.EditorTools
             body.transform.localPosition = Vector3.up * (thickness / 2f);
             body.AddComponent<MeshFilter>().sharedMesh = mesh;
             body.AddComponent<MeshRenderer>().sharedMaterials = materials;
+
+            if (food.sliceIngredient.HasValue)
+            {
+                var ingredient = root.AddComponent<KitchenIngredientItem>();
+                ingredient.ingredient = food.sliceIngredient.Value;
+                ingredient.amount = 1f;
+            }
 
             return KitchenCounterInstaller.SaveItem(root, KitchenItemKind.Generic, Mathf.Max(food.radius, 0.03f) + 0.01f, thickness, 0.03f);
         }

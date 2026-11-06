@@ -2,11 +2,12 @@ using System.Text;
 using Mirror;
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Dishaster
 {
     /// <summary>
-    /// Tarif kartı, tarif bozulunca çıkan uyarı ve dökme göstergesi (prefab). Kartı sadece Bilmiyorum görüyor: deftere
+    /// Tarif kartı, tarif bozulunca ya da tamamlanınca çıkan sonuç paneli ve dökme göstergesi (prefab). Kartı sadece Bilmiyorum görüyor: deftere
     /// çizip Duymadım'a anlatıyor, o da Görmedim'e söylüyor. Uyarıyı herkes görüyor. Dökme göstergesi kaba ne kadar
     /// girdiğini gösteriyor; görmeyen hiç görmüyor.
     /// </summary>
@@ -27,9 +28,17 @@ namespace Dishaster
         bool _showRecipe;
         bool _isLowVision;
         string _shownPour;
+        Image _resultImage;
+        Color _failColor;
+
+        static readonly Color CompletedColor = new Color(0.20f, 0.55f, 0.28f, 0.92f);
 
         void Awake()
         {
+            // Sonuç paneli: bozulunca kırmızı, tamamlanınca yeşil.
+            _resultImage = failPanel.GetComponent<Image>();
+            if (_resultImage != null) _failColor = _resultImage.color;
+
             recipePanel.SetActive(false);
             failPanel.SetActive(false);
             pourPanel.SetActive(false);
@@ -60,14 +69,16 @@ namespace Dishaster
         {
             if (counter.Recipe.Version == _shownVersion) return;
 
-            CakeRecipe recipe = counter.Recipe;
+            Recipe recipe = counter.Recipe;
             _shownVersion = recipe.Version;
 
             recipePanel.SetActive(_showRecipe && recipe.HasTargets);
             if (recipe.HasTargets) recipeText.text = recipe.Describe();
 
-            failPanel.SetActive(recipe.Failed);
+            failPanel.SetActive(recipe.Failed || recipe.Completed);
+            if (_resultImage != null) _resultImage.color = recipe.Completed ? CompletedColor : _failColor;
             if (recipe.Failed) failText.text = "<b>TARİF BOZULDU</b>\n<size=70%>" + recipe.FailReason + "</size>";
+            else if (recipe.Completed) failText.text = "<b>TARİF TAMAMLANDI</b>\n<size=70%>Afiyet olsun!</size>";
         }
 
         void UpdatePour(KitchenCounter counter)
@@ -118,7 +129,7 @@ namespace Dishaster
 
                     if (!first) _pour.Append("  ·  ");
                     first = false;
-                    _pour.Append(Ingredients.NameOf(ingredient)).Append(' ').Append(CakeRecipe.Format(ingredient, amount));
+                    _pour.Append(Ingredients.NameOf(ingredient)).Append(' ').Append(Recipe.Format(ingredient, amount));
                 }
 
                 _pour.Append("</size>");
