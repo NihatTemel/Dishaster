@@ -102,7 +102,7 @@ namespace Dishaster
             ApplyMouth(0f);
         }
 
-        internal static Transform FindBone(Transform root, string name)
+        public static Transform FindBone(Transform root, string name)
         {
             if (root.name == name) return root;
 

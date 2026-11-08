@@ -58,6 +58,7 @@ namespace Dishaster
         const float ChopDepth = 0.04f;
         const float MinCutReach = 0.1f;
 
+        const float MinGrabRadius = 0.07f;
         const float EdgeMargin = 0.05f;
         const float DropCeiling = 0.35f;
 
@@ -345,8 +346,9 @@ namespace Dishaster
             {
                 if (!item.gameObject.activeSelf) continue;
 
+                // Küçük eşyalar (dilim, yumurta) için en az 7 cm: el tam üstüne denk gelmese de alınsın.
                 float distance = Vector3.Distance(item.Center, aimPoint);
-                if (distance > item.grabRadius || distance >= nearestDistance) continue;
+                if (distance > Mathf.Max(item.grabRadius, MinGrabRadius) || distance >= nearestDistance) continue;
 
                 nearest = item;
                 nearestDistance = distance;
