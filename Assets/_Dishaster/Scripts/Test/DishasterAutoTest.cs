@@ -16,6 +16,13 @@ namespace Dishaster
     public class DishasterAutoTest : MonoBehaviour
     {
         const string Flag = "-dishasterAutotest";
+        // "-dishasterRole mute": Bilmiyorum olarak defter duruşları ve yürüme; varsayılan Görmedim ve tarif.
+        const string RoleFlag = "-dishasterRole";
+        // "-dishasterShots <klasör>": önemli anlarda ekran görüntüsü (birinci ve üçüncü şahıs).
+        const string ShotsFlag = "-dishasterShots";
+
+        string _shots;
+        bool _mute;
         const float TimeoutSeconds = 150f;
 
         readonly List<string> _errors = new List<string>();
@@ -33,6 +40,15 @@ namespace Dishaster
         void Awake()
         {
             Application.logMessageReceived += OnLog;
+
+            string[] args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == ShotsFlag) _shots = args[i + 1];
+                if (args[i] == RoleFlag) _mute = args[i + 1] == "mute";
+            }
+
+            if (_shots != null) System.IO.Directory.CreateDirectory(_shots);
         }
 
         void OnDestroy()
@@ -93,12 +109,13 @@ namespace Dishaster
                 yield return null;
             }
 
-            room.CmdSelectRole(MonkeyRoles.LowVision);
-            while (room.monkeyRole != MonkeyRoles.LowVision) yield return null;
+            int role = _mute ? MonkeyRoles.Mute : MonkeyRoles.LowVision;
+            room.CmdSelectRole(role);
+            while (room.monkeyRole != role) yield return null;
             room.CmdChangeReadyState(true);
             while (!manager.allPlayersReady) yield return null;
             manager.StartGame();
-            Log("oyun başlatıldı (Görmedim)");
+            Log("oyun başlatıldı (" + MonkeyRoles.NameOf(role) + ")");
 
             // ── Oyun ─────────────────────────────────────────────────────────
             DishasterPlayer player = null;
@@ -117,6 +134,15 @@ namespace Dishaster
 
             Check(player.GetComponentInChildren<CharacterBody>() != null, "karakter giydirilmedi");
             Check(FindObjectOfType<FirstPersonHands>() != null, "FPS elleri yok");
+
+            if (_mute)
+            {
+                IEnumerator notebookRun = RunNotebook(player);
+                while (notebookRun.MoveNext()) yield return notebookRun.Current;
+                yield break;
+            }
+
+            yield return Shot("blind_fp_idle");
 
             // Buzdolabı kapağı.
             KitchenDoor door = FindObjectOfType<KitchenDoor>();
@@ -141,10 +167,18 @@ namespace Dishaster
             // Bıçakla doğra.
             KitchenItem knife = counter.Items.First(item => item != null && item.kind == KitchenItemKind.Knife);
             yield return Grab(counter, knife);
+            yield return Shot("blind_fp_knife");
+            yield return Third("blind_3p_knife", player, false);
             for (int i = 0; i < slices; i++)
             {
                 if (!strawberry.gameObject.activeSelf) break;
                 counter.RequestCut(strawberry.transform.position);
+                if (i == 0)
+                {
+                    yield return new WaitForSeconds(0.1f);
+                    yield return Shot("blind_fp_chop");
+                }
+
                 yield return new WaitForSeconds(0.35f);
             }
 
@@ -159,6 +193,9 @@ namespace Dishaster
             if (cup == null || bowl == null || carton == null) yield break;
 
             yield return Grab(counter, carton.Item);
+            yield return Pour(counter, cup, () => cup.AmountOf(Ingredient.Milk) >= milk * 0.5f);
+            yield return Shot("blind_fp_pour");
+            yield return Third("blind_3p_pour", player, false);
             yield return Pour(counter, cup, () => cup.AmountOf(Ingredient.Milk) >= milk - 8f);
             Log($"bardakta {cup.AmountOf(Ingredient.Milk):0} ml süt");
             Check(recipe.StepState(1) == RecipeStepState.Done, "adım 2 (bardağa dök) tamamlanmadı");
@@ -189,8 +226,107 @@ namespace Dishaster
             Check(recipe.Completed, "tarif tamamlanmadı");
 
             // Biraz daha oynat: efektler, karakterler, eller hata vermesin.
+            yield return new WaitForSeconds(0.3f);
+            yield return Shot("blind_fp_done");
             yield return new WaitForSeconds(2f);
             Finish(_failures.Count == 0 && _errors.Count == 0, null);
+        }
+
+        // ── Bilmiyorum: defter duruşları ve yürüme ───────────────────────────
+
+        IEnumerator RunNotebook(DishasterPlayer player)
+        {
+            NotebookRole notebook = NotebookRole.Instance;
+            Check(notebook != null && notebook.Owner == player, "defter Bilmiyorum'a bağlanmadı");
+            if (notebook == null) yield break;
+
+            yield return new WaitForSeconds(1f);
+            yield return Shot("mute_fp_hold");
+            yield return Third("mute_3p_hold", player, false);
+
+            notebook.SetPoseForTest(NotebookPose.Draw);
+            yield return new WaitForSeconds(1f);
+            for (int i = 0; i < 12; i++)
+            {
+                float a = i / 12f;
+                float b = (i + 1) / 12f;
+                notebook.page.LocalStroke(new Vector2(0.2f + 0.6f * a, 0.5f + 0.2f * Mathf.Sin(a * 6f)), new Vector2(0.2f + 0.6f * b, 0.5f + 0.2f * Mathf.Sin(b * 6f)), 0, 2);
+            }
+
+            yield return new WaitForSeconds(0.3f);
+            yield return Shot("mute_fp_draw");
+            yield return Third("mute_3p_draw", player, false);
+
+            notebook.SetPoseForTest(NotebookPose.Show);
+            yield return new WaitForSeconds(1f);
+            yield return Shot("mute_fp_show");
+            yield return Third("mute_3p_show", player, false);
+
+            notebook.SetPoseForTest(NotebookPose.Hold);
+            CharacterController controller = player.GetComponent<CharacterController>();
+            float until = Time.time + 1.4f;
+            bool shot = false;
+            while (Time.time < until)
+            {
+                controller.Move(player.transform.forward * 4f * Time.deltaTime + Vector3.down * 0.1f);
+                if (!shot && Time.time > until - 0.5f)
+                {
+                    shot = true;
+                    yield return Third("mute_3p_walk", player, true);
+                }
+
+                yield return null;
+            }
+
+            yield return new WaitForSeconds(1f);
+            yield return Third("mute_3p_idle", player, false);
+            Finish(_failures.Count == 0 && _errors.Count == 0, null);
+        }
+
+        // ── Ekran görüntüleri ────────────────────────────────────────────────
+
+        IEnumerator Shot(string name)
+        {
+            if (_shots == null) yield break;
+
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(_shots, name + ".png"));
+            yield return null;
+            yield return null;
+        }
+
+        /// <summary>Oyuncuya önden (ya da yandan) bakan geçici kamera: kendi karakterini başkalarının gördüğü gibi.</summary>
+        IEnumerator Third(string name, DishasterPlayer player, bool side)
+        {
+            if (_shots == null) yield break;
+
+            // Kendi gövden sadece gölge, FPS elleri sadece sende: çekimde başkalarının gördüğü hale getir.
+            CharacterBody body = player.GetComponentInChildren<CharacterBody>();
+            Renderer[] bodyRenderers = body != null ? body.GetComponentsInChildren<Renderer>(true) : new Renderer[0];
+            foreach (Renderer renderer in bodyRenderers) renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            FirstPersonHands hands = FindObjectOfType<FirstPersonHands>();
+            Renderer[] handRenderers = hands != null ? hands.GetComponentsInChildren<Renderer>(true) : new Renderer[0];
+            foreach (Renderer renderer in handRenderers) renderer.enabled = false;
+
+            var cameraObject = new GameObject("AutoTestCamera");
+            var view = cameraObject.AddComponent<Camera>();
+            view.depth = 100f;
+            view.fieldOfView = 50f;
+            view.nearClipPlane = 0.05f;
+            Transform root = player.transform;
+            Vector3 direction = side ? root.right : root.forward;
+            cameraObject.transform.position = root.position + direction * 2.6f + Vector3.up * 0.55f;
+            cameraObject.transform.LookAt(root.position + Vector3.up * 0.25f);
+
+            yield return null;
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(_shots, name + ".png"));
+            yield return null;
+            yield return null;
+
+            Destroy(cameraObject);
+            foreach (Renderer renderer in bodyRenderers) renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly;
+            foreach (Renderer renderer in handRenderers) renderer.enabled = true;
         }
 
         readonly List<string> _failures = new List<string>();

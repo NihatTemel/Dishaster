@@ -99,6 +99,7 @@ namespace Dishaster
         public Button closeButton;
 
         DishasterPlayer _owner;
+        bool _testOverride;
         Transform _pencil;
         bool _isLocal;
         NotebookPose _pose = NotebookPose.Hold;
@@ -212,7 +213,7 @@ namespace Dishaster
 
         void Update()
         {
-            if (!ResolveOwner() || !_isLocal) return;
+            if (!ResolveOwner() || !_isLocal || _testOverride) return;
 
             if (_pose == NotebookPose.Draw)
             {
@@ -236,6 +237,14 @@ namespace Dishaster
             }
 
             SetLocalPose(Input.GetMouseButton(1) ? NotebookPose.Show : NotebookPose.Hold);
+        }
+
+        /// <summary>Otomatik test için: duruşu Bilmiyorum'un tuşlarına basmış gibi değiştiriyor.</summary>
+        public void SetPoseForTest(NotebookPose pose)
+        {
+            if (!_isLocal) return;
+            _testOverride = true;
+            SetLocalPose(pose);
         }
 
         void SetLocalPose(NotebookPose pose)
