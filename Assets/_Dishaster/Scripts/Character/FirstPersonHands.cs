@@ -41,8 +41,8 @@ namespace Dishaster
 
         // Kol: bilekten omza doğru, karakterin ceketinden. Bilek kesiğindeki kapağı kapatıyor, eli gövdeye bağlıyor.
         const float SleeveLength = 0.36f;
-        const float SleeveRadius = 0.042f;
-        const float SleeveOverlap = 0.02f;
+        const float SleeveRadius = 0.056f;
+        const float SleeveOverlap = 0.045f;
 
         public void Setup(DishasterPlayer player, AnimationClip poses, Material sleeve)
         {
@@ -137,8 +137,9 @@ namespace Dishaster
                 // Eşya tutuyorsa avuç eşyada: bıçak inip kalkarken, kap dökerken eğilirken el de onunla.
                 if (counter != null && counter.TryGetHeldGrip(out Vector3 palm, out Quaternion itemTurn))
                 {
+                    // Avuç eşyayı izliyor; elin yönü omuzdan geliyor (eğimi ele de verince bilek kapağı kolla
+                    // hizasız kalıyordu). Karakterin kendi eli (IK) eğimle birlikte gidiyor.
                     right = palm;
-                    rightAfter = itemTurn;
                     frame = FrameGrip;
                 }
                 else

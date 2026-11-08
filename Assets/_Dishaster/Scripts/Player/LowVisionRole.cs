@@ -214,7 +214,7 @@ namespace Dishaster
                 _hint.raycastTarget = false;
                 RectTransform rect = _hint.rectTransform;
                 rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
-                rect.anchoredPosition = new Vector2(0f, -70f);
+                rect.anchoredPosition = new Vector2(0f, -110f);
                 rect.sizeDelta = new Vector2(1200f, 50f);
             }
 
