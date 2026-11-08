@@ -104,6 +104,8 @@ namespace Dishaster
 
         public KitchenItem Held => _held;
 
+        public Vector3 DoorPosition(int id) => id >= 0 && id < _doors.Count ? _doors[id].transform.position : transform.position;
+
         /// <summary>Sahnedeki tüm eşyalar (dilimler dahil); sıra eşya numarası.</summary>
         public IReadOnlyList<KitchenItem> Items => _items;
 
@@ -447,6 +449,7 @@ namespace Dishaster
             if (message.type == KitchenEventType.Door)
             {
                 _doors[message.itemId].Toggle();
+                Applied?.Invoke(message, null);
                 return;
             }
 
@@ -507,7 +510,11 @@ namespace Dishaster
             }
 
             _recipe.UpdateSteps(_cup, _bowl);
+            Applied?.Invoke(message, item);
         }
+
+        /// <summary>Her mutfak olayı uygulandıktan sonra (herkeste): efekt ve sesler buna bağlanıyor.</summary>
+        public static event System.Action<KitchenEventMessage, KitchenItem> Applied;
 
         // ── AĞ ──────────────────────────────────────────────────────────────
 
