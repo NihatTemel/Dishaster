@@ -166,6 +166,8 @@ namespace Dishaster
             hand.SetPositionAndRotation(Vector3.Lerp(hand.position, target, 1f - Mathf.Exp(-HandSmoothing * Time.deltaTime)), rotation);
 
             // İmleç serbestse ESC menüsü açık demek.
+            UpdateHint();
+
             if (Cursor.lockState == CursorLockMode.Locked && !_player.ControlBlocked && KitchenCounter.Instance != null)
             {
                 if (Input.GetMouseButtonDown(0)) KitchenCounter.Instance.RequestGrabOrDrop(_aimPoint);
@@ -181,6 +183,44 @@ namespace Dishaster
                 _nextSendTime = Time.time + HandSendInterval;
                 NetworkClient.Send(new LowVisionHandMessage { position = position, yaw = yaw }, Channels.Unreliable);
             }
+        }
+
+        TMPro.TextMeshProUGUI _hint;
+
+        /// <summary>
+        /// Sadece test anahtarı açıkken (Görmedim normal görürken): nişangahın altında sol/sağ tıkın ne yapacağı.
+        /// Gerçek oyunda görmeyen hiçbir arayüz görmüyor.
+        /// </summary>
+        void UpdateHint()
+        {
+            if (!DishasterTest.LowVisionSeesEverything || KitchenCounter.Instance == null) return;
+
+            if (_hint == null)
+            {
+                var canvasObject = new GameObject("LowVisionTestHint");
+                canvasObject.transform.SetParent(transform, false);
+                var canvas = canvasObject.AddComponent<Canvas>();
+                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                canvas.sortingOrder = 5;
+                var scaler = canvasObject.AddComponent<UnityEngine.UI.CanvasScaler>();
+                scaler.uiScaleMode = UnityEngine.UI.CanvasScaler.ScaleMode.ScaleWithScreenSize;
+                scaler.referenceResolution = new Vector2(1920f, 1080f);
+                scaler.matchWidthOrHeight = 0.5f;
+
+                _hint = new GameObject("Hint").AddComponent<TMPro.TextMeshProUGUI>();
+                _hint.transform.SetParent(canvasObject.transform, false);
+                _hint.fontSize = 28f;
+                _hint.alignment = TMPro.TextAlignmentOptions.Center;
+                _hint.raycastTarget = false;
+                RectTransform rect = _hint.rectTransform;
+                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+                rect.anchoredPosition = new Vector2(0f, -70f);
+                rect.sizeDelta = new Vector2(1200f, 50f);
+            }
+
+            bool show = Cursor.lockState == CursorLockMode.Locked && !_player.ControlBlocked;
+            string text = show ? KitchenCounter.Instance.DescribeActions(_aimPoint) : "";
+            if (_hint.text != text) _hint.text = text;
         }
 
         void UpdateRemoteHand()

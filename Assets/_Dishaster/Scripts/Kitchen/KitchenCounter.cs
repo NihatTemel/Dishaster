@@ -311,6 +311,56 @@ namespace Dishaster
             return true;
         }
 
+        // ── İPUCU (test) ────────────────────────────────────────────────────
+
+        /// <summary>Sol ve sağ tıkın o an ne yapacağı (sunucunun kararıyla aynı kurallar); test ipucu için.</summary>
+        public string DescribeActions(Vector3 aimPoint)
+        {
+            string left = null;
+            foreach (KitchenDoor door in _doors)
+                if (door.IsTouched(aimPoint)) left = "Kapak";
+
+            if (left == null && _held != null)
+            {
+                if (_held.Ingredient != null && _bowl != null && IsAimingInto(_bowl, aimPoint, BowlAimAbove)) left = "Kaseye koy";
+                else if (IsOverCounter(aimPoint)) left = "Bırak";
+            }
+            else if (left == null)
+            {
+                KitchenItem nearest = null;
+                float nearestDistance = float.PositiveInfinity;
+                foreach (KitchenItem item in _items)
+                {
+                    if (!item.gameObject.activeSelf) continue;
+                    float distance = Vector3.Distance(item.Center, aimPoint);
+                    if (distance > Mathf.Max(item.grabRadius, MinGrabRadius) || distance >= nearestDistance) continue;
+                    nearest = item;
+                    nearestDistance = distance;
+                }
+
+                if (nearest != null) left = "Al: " + NameOf(nearest);
+            }
+
+            string right = null;
+            if (_held != null && _held.kind == KitchenItemKind.Knife) right = "Kes";
+            else if (_held != null && _held.Container != null && _held.Container.canPour)
+            {
+                KitchenContainer target = FindPourTarget(aimPoint, _held.Container);
+                right = target != null ? "Dök → " + NameOf(target.Item) + " (basılı tut)" : "Dök (yere)";
+            }
+
+            string text = left != null ? "[Sol tık] " + left : "";
+            if (right != null) text += (text.Length > 0 ? "     " : "") + "[Sağ tık] " + right;
+            return text;
+        }
+
+        static string NameOf(KitchenItem item)
+        {
+            if (item.Container != null && !string.IsNullOrEmpty(item.Container.displayName)) return item.Container.displayName;
+            if (item.Ingredient != null) return Ingredients.NameOf(item.Ingredient.ingredient);
+            return item.gameObject.name.Replace("(Clone)", "").Trim();
+        }
+
         // ── SUNUCU ──────────────────────────────────────────────────────────
 
         void ServerGrabOrDrop(Vector3 aimPoint)
