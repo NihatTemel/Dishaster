@@ -125,6 +125,8 @@ namespace Dishaster
                 yield return null;
             }
 
+            _player = player;
+
             yield return new WaitForSeconds(1f);
             KitchenCounter counter = KitchenCounter.Instance;
             Recipe recipe = counter.Recipe;
@@ -148,6 +150,7 @@ namespace Dishaster
             KitchenDoor door = FindObjectOfType<KitchenDoor>();
             if (door != null && door.panel != null)
             {
+                yield return Approach(door.panel.bounds.center);
                 counter.RequestGrabOrDrop(door.panel.bounds.center);
                 yield return Wait();
             }
@@ -160,6 +163,7 @@ namespace Dishaster
 
             yield return Grab(counter, strawberry);
             Vector3 board = counter.cuttingBoard.position + Vector3.up * 0.03f;
+            yield return Approach(board);
             counter.RequestGrabOrDrop(board);
             yield return Wait();
             Check(counter.Held == null, "çilek tahtaya bırakılamadı");
@@ -169,6 +173,7 @@ namespace Dishaster
             yield return Grab(counter, knife);
             yield return Shot("blind_fp_knife");
             yield return Third("blind_3p_knife", player, false);
+            yield return Approach(strawberry.transform.position);
             for (int i = 0; i < slices; i++)
             {
                 if (!strawberry.gameObject.activeSelf) break;
@@ -216,6 +221,7 @@ namespace Dishaster
                 if (slice == null) break;
 
                 yield return Grab(counter, slice);
+                yield return Approach(bowl.Item.Center);
                 counter.RequestGrabOrDrop(bowl.Item.Center);
                 yield return Wait();
             }
@@ -241,6 +247,7 @@ namespace Dishaster
             if (notebook == null) yield break;
 
             yield return new WaitForSeconds(1f);
+            Measure("hold", player, notebook);
             yield return Shot("mute_fp_hold");
             yield return Third("mute_3p_hold", player, false);
 
@@ -254,11 +261,13 @@ namespace Dishaster
             }
 
             yield return new WaitForSeconds(0.3f);
+            Measure("draw", player, notebook);
             yield return Shot("mute_fp_draw");
             yield return Third("mute_3p_draw", player, false);
 
             notebook.SetPoseForTest(NotebookPose.Show);
             yield return new WaitForSeconds(1f);
+            Measure("show", player, notebook);
             yield return Shot("mute_fp_show");
             yield return Third("mute_3p_show", player, false);
 
@@ -281,6 +290,26 @@ namespace Dishaster
             yield return new WaitForSeconds(1f);
             yield return Third("mute_3p_idle", player, false);
             Finish(_failures.Count == 0 && _errors.Count == 0, null);
+        }
+
+        /// <summary>Kameraya göre konumlar (x sağ, y yukarı, z ileri): FPS elleri nerede, defter nerede.</summary>
+        void Measure(string label, DishasterPlayer player, NotebookRole notebook)
+        {
+            Transform view = player.playerCamera.transform;
+            string Local(Vector3 world) => view.InverseTransformPoint(world).ToString("F2");
+
+            FirstPersonHands hands = FindObjectOfType<FirstPersonHands>();
+            Transform leftWrist = hands != null ? CharacterBody.FindBone(hands.transform, "LeftHand") : null;
+            Transform rightWrist = hands != null ? CharacterBody.FindBone(hands.transform, "RightHand") : null;
+            Transform leftFore = hands != null ? CharacterBody.FindBone(hands.transform, "LeftForeArm") : null;
+            Transform rightFore = hands != null ? CharacterBody.FindBone(hands.transform, "RightForeArm") : null;
+            Transform pencil = CharacterBody.FindBone(notebook.rightHand, "Pencil");
+
+            Log($"[{label}] notebook {Local(notebook.notebook.position)} leftGrip {Local(notebook.LeftGripPoint)} penGrip {Local(notebook.PenGripPoint)}");
+            if (leftWrist != null) Log($"[{label}] FP leftWrist {Local(leftWrist.position)} scale {leftFore.localScale.x:F1} | rightWrist {Local(rightWrist.position)} scale {rightFore.localScale.x:F1}");
+            if (pencil != null) Log($"[{label}] pencil {Local(pencil.position)} active {pencil.gameObject.activeInHierarchy} rendered {pencil.GetComponent<Renderer>().enabled}");
+            Renderer skin = hands != null ? hands.GetComponentInChildren<SkinnedMeshRenderer>() : null;
+            if (skin != null) Log($"[{label}] FP renderer enabled {skin.enabled} bounds {Local(skin.bounds.center)} size {skin.bounds.size.ToString("F2")} layer {skin.gameObject.layer}");
         }
 
         // ── Ekran görüntüleri ────────────────────────────────────────────────
@@ -345,8 +374,30 @@ namespace Dishaster
             yield return new WaitForSeconds(0.1f);
         }
 
+        DishasterPlayer _player;
+
+        /// <summary>Oyuncuyu hedefin önüne koyup ona baktırıyor: el (bakış ışını) gerçekten oraya gidiyor.</summary>
+        IEnumerator Approach(Vector3 point)
+        {
+            if (_player == null) yield break;
+
+            Vector3 flat = new Vector3(point.x, 0f, point.z);
+            Vector3 away = flat.magnitude < 1.5f ? Vector3.back : -flat.normalized;
+            CharacterController controller = _player.GetComponent<CharacterController>();
+            controller.enabled = false;
+            _player.transform.position = new Vector3(point.x, 1.05f, point.z) + away * 0.75f;
+            controller.enabled = true;
+
+            for (int i = 0; i < 3; i++)
+            {
+                _player.FaceTowards(point);
+                yield return null;
+            }
+        }
+
         IEnumerator Grab(KitchenCounter counter, KitchenItem item)
         {
+            yield return Approach(item.Center);
             counter.RequestGrabOrDrop(item.Center);
             yield return Wait();
             Check(counter.Held == item, "alınamadı: " + item.name);
@@ -355,6 +406,7 @@ namespace Dishaster
         IEnumerator Drop(KitchenCounter counter, Vector3 local)
         {
             Vector3 aim = counter.transform.TransformPoint(new Vector3(local.x, counter.topHeight + 0.02f, local.z));
+            yield return Approach(aim);
             counter.RequestGrabOrDrop(aim);
             yield return Wait();
             Check(counter.Held == null, "bırakılamadı");
@@ -362,6 +414,7 @@ namespace Dishaster
 
         IEnumerator Pour(KitchenCounter counter, KitchenContainer into, System.Func<bool> done)
         {
+            yield return Approach(into.Item.Center + Vector3.up * 0.1f);
             float until = Time.time + 12f;
             while (!done() && Time.time < until)
             {

@@ -50,6 +50,16 @@ namespace Dishaster
             transform.localRotation = Quaternion.identity;
             transform.localPosition = CameraOffset;
 
+            // Kemikler kameraya taşınıyor ama sınır kutusu dinlenme pozunda (kameranın ~1 m altında) kalıyordu:
+            // Unity elleri görüş dışı sanıp hiç çizmiyordu. Sınırlar her kare pozdan hesaplansın (az üçgen, ucuz).
+            foreach (SkinnedMeshRenderer skin in GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                skin.updateWhenOffscreen = true;
+                skin.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                // Defterin ve kafanın gölgesinde kararmasın.
+                skin.receiveShadows = false;
+            }
+
             _left = FindHand("Left");
             _right = FindHand("Right");
         }

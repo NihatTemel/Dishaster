@@ -142,6 +142,16 @@ namespace Dishaster
             _controller.Move((horizontal + Vector3.up * _verticalVelocity) * Time.deltaTime);
         }
 
+        /// <summary>Otomatik test için: gövdeyi ve kafayı bir noktaya çevirir (fare ile bakmak gibi).</summary>
+        public void FaceTowards(Vector3 point)
+        {
+            Vector3 direction = point - headPivot.position;
+            float flat = new Vector2(direction.x, direction.z).magnitude;
+            transform.rotation = Quaternion.Euler(0f, Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg, 0f);
+            _pitch = Mathf.Clamp(-Mathf.Atan2(direction.y, flat) * Mathf.Rad2Deg, -maxPitch, maxPitch);
+            headPivot.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
+        }
+
         /// <summary>Kamerayı geçici olarak bir noktaya taşır (çizim tahtası gibi); null ile kafaya döner.</summary>
         public void SetCameraOverride(Transform target)
         {
