@@ -49,8 +49,11 @@ namespace Dishaster
 
         public bool IsDrawing => _owner != null && _pose == NotebookPose.Draw;
 
-        /// <summary>Sol avucun defterdeki yeri (karakterin eli ve FPS eli buraya geliyor).</summary>
-        public Vector3 LeftGripPoint => leftHand.position;
+        /// <summary>
+        /// Sol avucun defterdeki yeri: alt kenarın sol çeyreği, kapağın hemen arkası. El defteri alttan kavrıyor;
+        /// kameradan bakınca defterin altında, başparmak sayfanın üstünde görünüyor (karakterin eli ve FPS eli buraya).
+        /// </summary>
+        public Vector3 LeftGripPoint => notebook.TransformPoint(new Vector3(-pageSize.x * 0.28f, -pageSize.y * 0.5f - 0.015f, 0.012f));
 
         /// <summary>Kalemi tutan avucun yeri: kalemin ortasından biraz yukarısı.</summary>
         public Vector3 PenGripPoint => _pencil != null ? _pencil.position + _pencil.up * 0.03f : rightHand.position;

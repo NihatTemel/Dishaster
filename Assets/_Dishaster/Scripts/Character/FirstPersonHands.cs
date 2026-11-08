@@ -82,6 +82,7 @@ namespace Dishaster
             Vector3? left = null;
             Vector3? right = null;
             Quaternion leftTurn = Quaternion.identity;
+            Quaternion rightAfter = Quaternion.identity;
             bool showLeft = !hidden;
             bool showRight = !hidden;
 
@@ -96,11 +97,21 @@ namespace Dishaster
             else if (_player.role == MonkeyRoles.LowVision)
             {
                 showLeft = false;
-                Transform reach = LowVisionRole.Hand;
-                if (reach != null) right = reach.position;
-
                 KitchenCounter counter = KitchenCounter.Instance;
-                frame = counter != null && counter.Held != null ? FrameGrip : FrameOpen;
+
+                // Eşya tutuyorsa avuç eşyada: bıçak inip kalkarken, kap dökerken eğilirken el de onunla.
+                if (counter != null && counter.TryGetHeldGrip(out Vector3 palm, out Quaternion itemTurn))
+                {
+                    right = palm;
+                    rightAfter = itemTurn;
+                    frame = FrameGrip;
+                }
+                else
+                {
+                    Transform reach = LowVisionRole.Hand;
+                    if (reach != null) right = reach.position;
+                    frame = FrameOpen;
+                }
             }
 
             // Klip kemikleri kameraya göre pozluyor; taşıma bunun üstüne.
@@ -109,8 +120,8 @@ namespace Dishaster
             _poses.SampleAnimation(gameObject, frame / FrameRate);
 
             Transform view = _player.playerCamera.transform;
-            Place(_left, showLeft, left, leftTurn, view.TransformPoint(LeftShoulder));
-            Place(_right, showRight, right, Quaternion.identity, view.TransformPoint(RightShoulder));
+            Place(_left, showLeft, left, leftTurn, view.TransformPoint(LeftShoulder), Quaternion.identity);
+            Place(_right, showRight, right, Quaternion.identity, view.TransformPoint(RightShoulder), rightAfter);
         }
 
         static void Reset(Hand hand)
@@ -119,7 +130,7 @@ namespace Dishaster
             hand.foreArm.localRotation = hand.restRotation;
         }
 
-        static void Place(Hand hand, bool visible, Vector3? target, Quaternion turn, Vector3 shoulder)
+        static void Place(Hand hand, bool visible, Vector3? target, Quaternion turn, Vector3 shoulder, Quaternion after)
         {
             // Gizlemek: ön kol (ve altındaki el) sıfıra ölçekleniyor.
             hand.foreArm.localScale = visible ? Vector3.one : Vector3.zero;
@@ -136,6 +147,9 @@ namespace Dishaster
                 if (along.sqrMagnitude > 1e-6f && reach.sqrMagnitude > 1e-6f)
                     turn = Quaternion.FromToRotation(along, reach) * turn;
             }
+
+            // Eşyanın kendi hareketi (eğilme) en son: el eşyayla birlikte dönüyor.
+            turn = after * turn;
 
             // Avucun etrafında dön, sonra avucu hedefe taşı.
             foreArm.SetPositionAndRotation(palm + turn * (foreArm.position - palm), turn * foreArm.rotation);

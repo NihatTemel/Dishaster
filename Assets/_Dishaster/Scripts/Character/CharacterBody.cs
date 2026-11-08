@@ -16,8 +16,7 @@ namespace Dishaster
         const string VisemeOpen = "Viseme_OO";
         const string VisemeWide = "Viseme_EE";
 
-        // Kalça yanı (ayak tabanına göre, metre): boştaki eller.
-        static readonly Vector3 IdleHand = new Vector3(0.24f, 0.86f, 0.04f);
+        static readonly int SpeedParameter = Animator.StringToHash("Speed");
 
         struct Face
         {
@@ -45,6 +44,12 @@ namespace Dishaster
         float _nextBlink;
         float _blinkTime = -1f;
         float _openness;
+        Vector3 _lastPosition;
+        float _speed;
+        float _leftWeight;
+        float _rightWeight;
+        Vector3 _leftTarget;
+        Vector3 _rightTarget;
 
         public DishasterPlayer Player => _player;
 
@@ -92,6 +97,7 @@ namespace Dishaster
                 });
             }
 
+            _lastPosition = player.transform.position;
             _nextBlink = Time.time + Random.Range(1f, 4f);
             ApplyMouth(0f);
         }
@@ -123,15 +129,36 @@ namespace Dishaster
             _animator.SetLookAtWeight(1f, 0.25f, 0.9f, 0f, 0.6f);
             _animator.SetLookAtPosition(head.position + head.forward * 3f);
 
+            // İş yoksa kol animasyonda (idle/yürüme); iş varsa yumuşakça ona uzanıyor.
             GetHandTargets(out Vector3? left, out Vector3? right);
-            SetHand(AvatarIKGoal.LeftHand, left ?? transform.TransformPoint(new Vector3(-IdleHand.x, IdleHand.y, IdleHand.z)));
-            SetHand(AvatarIKGoal.RightHand, right ?? transform.TransformPoint(IdleHand));
+            float blend = 1f - Mathf.Exp(-10f * Time.deltaTime);
+            _leftWeight = Mathf.Lerp(_leftWeight, left.HasValue ? 1f : 0f, blend);
+            _rightWeight = Mathf.Lerp(_rightWeight, right.HasValue ? 1f : 0f, blend);
+            if (left.HasValue) _leftTarget = left.Value;
+            if (right.HasValue) _rightTarget = right.Value;
+
+            SetHand(AvatarIKGoal.LeftHand, _leftWeight, _leftTarget);
+            SetHand(AvatarIKGoal.RightHand, _rightWeight, _rightTarget);
         }
 
-        void SetHand(AvatarIKGoal goal, Vector3 position)
+        void SetHand(AvatarIKGoal goal, float weight, Vector3 position)
         {
-            _animator.SetIKPositionWeight(goal, 1f);
+            _animator.SetIKPositionWeight(goal, weight);
             _animator.SetIKPosition(goal, position);
+        }
+
+        // Yürüme hızı: konum farkından (uzaktaki oyuncular NetworkTransform'la geliyor, onlarda da çalışıyor).
+        void Update()
+        {
+            if (_player == null) return;
+
+            Vector3 delta = _player.transform.position - _lastPosition;
+            _lastPosition = _player.transform.position;
+            delta.y = 0f;
+
+            float speed = Time.deltaTime > 0f ? delta.magnitude / Time.deltaTime : 0f;
+            _speed = Mathf.Lerp(_speed, Mathf.Min(speed, 8f), 1f - Mathf.Exp(-8f * Time.deltaTime));
+            _animator.SetFloat(SpeedParameter, _speed < 0.15f ? 0f : _speed);
         }
 
         /// <summary>Rolün o anki işi: elin gitmesi gereken yer (yoksa boşta).</summary>
@@ -150,8 +177,14 @@ namespace Dishaster
 
             if (_player.role == MonkeyRoles.LowVision)
             {
-                Transform hand = LowVisionRole.Hand;
-                if (hand != null && hand.gameObject.activeInHierarchy) right = hand.position;
+                // Eşya tutuyorsa avuç eşyada (bıçak inip kalkarken, kap eğilirken el de onunla); değilse dokunduğu yerde.
+                KitchenCounter counter = KitchenCounter.Instance;
+                if (counter != null && counter.TryGetHeldGrip(out Vector3 palm, out _)) right = palm;
+                else
+                {
+                    Transform hand = LowVisionRole.Hand;
+                    if (hand != null && hand.gameObject.activeInHierarchy) right = hand.position;
+                }
             }
         }
 
