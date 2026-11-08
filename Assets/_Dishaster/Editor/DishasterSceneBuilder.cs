@@ -112,6 +112,7 @@ namespace Dishaster.EditorTools
             InspectInstaller.PlaceInGameScene();
             VoiceChatInstaller.PlaceInGameScene();
             CharactersInstaller.PlaceInGameScene();
+            FoodShowcaseInstaller.PlaceInGameScene();
 
             Debug.Log($"[Dishaster] Sahneler kuruldu. RoomPlayer assetId={roomPlayer.GetComponent<NetworkIdentity>().assetId}, " +
                       $"GamePlayer assetId={gamePlayer.GetComponent<NetworkIdentity>().assetId}");
