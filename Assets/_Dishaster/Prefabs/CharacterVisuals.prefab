@@ -60,5 +60,5 @@ MonoBehaviour:
     hands: {fileID: 919132149155446097, guid: 3f02791e6288ff64bb8c9ef8e99dd789, type: 3}
     handPoses: {fileID: -623603649343465320, guid: 3f02791e6288ff64bb8c9ef8e99dd789, type: 3}
     lidAngle: -90
-  controller: {fileID: 9100000, guid: b09cc07314ab721429b89a522a5c48ae, type: 2}
+  controller: {fileID: 9100000, guid: 2f27ace4fb9ee7143b4e6c93248a155a, type: 2}
   feetOffset: -1
