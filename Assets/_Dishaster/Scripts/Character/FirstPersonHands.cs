@@ -29,6 +29,7 @@ namespace Dishaster
             public Transform knuckle;
             public Vector3 restPosition;
             public Quaternion restRotation;
+            public Transform sleeve;
 
             public Vector3 Palm => knuckle != null ? (wrist.position + knuckle.position) * 0.5f : wrist.position;
         }
@@ -38,7 +39,12 @@ namespace Dishaster
         Hand _left;
         Hand _right;
 
-        public void Setup(DishasterPlayer player, AnimationClip poses)
+        // Kol: bilekten omza doğru, karakterin ceketinden. Bilek kesiğindeki kapağı kapatıyor, eli gövdeye bağlıyor.
+        const float SleeveLength = 0.36f;
+        const float SleeveRadius = 0.042f;
+        const float SleeveOverlap = 0.02f;
+
+        public void Setup(DishasterPlayer player, AnimationClip poses, Material sleeve)
         {
             _player = player;
             _poses = poses;
@@ -62,6 +68,25 @@ namespace Dishaster
 
             _left = FindHand("Left");
             _right = FindHand("Right");
+            _left.sleeve = MakeSleeve("LeftSleeve", sleeve);
+            _right.sleeve = MakeSleeve("RightSleeve", sleeve);
+        }
+
+        Transform MakeSleeve(string name, Material material)
+        {
+            if (material == null) return null;
+
+            GameObject sleeve = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            sleeve.name = name;
+            Destroy(sleeve.GetComponent<Collider>());
+            sleeve.transform.SetParent(transform, false);
+            sleeve.transform.localScale = new Vector3(SleeveRadius * 2f, SleeveLength / 2f, SleeveRadius * 2f);
+
+            var renderer = sleeve.GetComponent<Renderer>();
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            return sleeve.transform;
         }
 
         Hand FindHand(string side)
@@ -144,7 +169,13 @@ namespace Dishaster
         {
             // Gizlemek: ön kol (ve altındaki el) sıfıra ölçekleniyor.
             hand.foreArm.localScale = visible ? Vector3.one : Vector3.zero;
-            if (!visible || !target.HasValue) return;
+            if (hand.sleeve != null) hand.sleeve.gameObject.SetActive(visible);
+            if (!visible) return;
+            if (!target.HasValue)
+            {
+                PlaceSleeve(hand, shoulder);
+                return;
+            }
 
             Vector3 palm = hand.Palm;
             Transform foreArm = hand.foreArm;
@@ -164,6 +195,20 @@ namespace Dishaster
             // Avucun etrafında dön, sonra avucu hedefe taşı.
             foreArm.SetPositionAndRotation(palm + turn * (foreArm.position - palm), turn * foreArm.rotation);
             foreArm.position += target.Value - palm;
+            PlaceSleeve(hand, shoulder);
+        }
+
+        /// <summary>Kol, bilekten omza doğru uzanıyor (ekranın dışına); bileğe biraz biniyor ki kapak görünmesin.</summary>
+        static void PlaceSleeve(Hand hand, Vector3 shoulder)
+        {
+            if (hand.sleeve == null) return;
+
+            Vector3 along = hand.wrist.position - shoulder;
+            if (along.sqrMagnitude < 1e-6f) return;
+            along.Normalize();
+            hand.sleeve.SetPositionAndRotation(
+                hand.wrist.position - along * (SleeveLength / 2f - SleeveOverlap),
+                Quaternion.FromToRotation(Vector3.up, along));
         }
     }
 }

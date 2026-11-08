@@ -74,7 +74,27 @@ namespace Dishaster
 
             GameObject hands = Instantiate(character.hands);
             hands.name = "FirstPersonHands";
-            hands.AddComponent<FirstPersonHands>().Setup(player, character.handPoses);
+            hands.AddComponent<FirstPersonHands>().Setup(player, character.handPoses, SleeveMaterial(body));
+        }
+
+        /// <summary>Karakterin ceket malzemesi (FPS kolları için); yoksa gövdenin ilk malzemesi.</summary>
+        static Material SleeveMaterial(GameObject body)
+        {
+            Renderer source = null;
+            foreach (Renderer renderer in body.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer.name.Contains("Jacket")) { source = renderer; break; }
+                if (source == null) source = renderer;
+            }
+
+            if (source == null) return null;
+
+            // Ceket dokusu silindirin UV'sinde karışık durur: aynı malzemenin düz krem (aşçı ceketi) hali.
+            var material = new Material(source.sharedMaterial) { mainTexture = null };
+            material.SetTexture("_BumpMap", null);
+            material.DisableKeyword("_NORMALMAP");
+            material.color = new Color(0.92f, 0.87f, 0.77f);
+            return material;
         }
     }
 }
