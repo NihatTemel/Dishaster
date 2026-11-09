@@ -34,17 +34,20 @@ namespace Dishaster
             NotebookRole notebook = NotebookRole.Instance;
             if (notebook != null && notebook.Owner == player)
             {
-                // Sol el defterin sol kenarını kavrıyor: avuç kenara bakıyor, parmaklar yukarı-arkaya uzanıp kapanınca
-                // kapağın arkasını sarıyor, başparmak sayfanın önünde. Defterin uzayında: çevirirken el de onunla döner.
+                // Sol el defteri alttan taşıyor: avuç yukarı, parmaklar arkaya uzanıp kapağın arkasını sarıyor,
+                // başparmak önde. Gösterirken defter 180° dönüyor ama el sadece çeyrek (bilek bundan fazlasını doğal
+                // yapamıyor): parmaklar dışarı (sola) bakıyor, tepsi tutar gibi, uçları kapağın arkasına yaslı.
                 Transform book = notebook.notebook;
+                float turn = notebook.TurnFraction;
                 left = new HandGoal
                 {
                     active = true,
                     palm = notebook.LeftGripPoint,
-                    fingers = book.up + book.forward,
-                    palmFacing = book.right,
-                    closedFrame = FrameGrip,
-                    curl = 0.85f,
+                    fingers = Quaternion.AngleAxis(90f * turn, book.up) * book.forward,
+                    palmFacing = book.up,
+                    // İnce kenara sıkı sarılsın: yumruk karesine doğru; gösterirken gevşiyor (tepsi gibi taşıyor).
+                    closedFrame = FrameFist,
+                    curl = Mathf.Lerp(0.65f, 0.3f, turn),
                 };
 
                 // Sağ el sadece çizerken: kalemi yumrukla kavrıyor, parmaklar kalemin ucuna doğru.
