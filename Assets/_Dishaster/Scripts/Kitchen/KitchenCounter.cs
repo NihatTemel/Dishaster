@@ -59,6 +59,7 @@ namespace Dishaster
         const float MinCutReach = 0.1f;
 
         const float MinGrabRadius = 0.07f;
+        const float SurfaceGrabTolerance = 0.03f;
         const float EdgeMargin = 0.05f;
         const float DropCeiling = 0.35f;
 
@@ -311,17 +312,7 @@ namespace Dishaster
             }
             else if (left == null)
             {
-                KitchenItem nearest = null;
-                float nearestDistance = float.PositiveInfinity;
-                foreach (KitchenItem item in _items)
-                {
-                    if (!item.gameObject.activeSelf) continue;
-                    float distance = Vector3.Distance(item.Center, aimPoint);
-                    if (distance > Mathf.Max(item.grabRadius, MinGrabRadius) || distance >= nearestDistance) continue;
-                    nearest = item;
-                    nearestDistance = distance;
-                }
-
+                KitchenItem nearest = FindGrabbable(aimPoint);
                 if (nearest != null) left = "Al: " + NameOf(nearest);
             }
 
@@ -373,6 +364,18 @@ namespace Dishaster
                 return;
             }
 
+            KitchenItem nearest = FindGrabbable(aimPoint);
+            if (nearest != null)
+                ServerSend(new KitchenEventMessage { type = KitchenEventType.Grab, itemId = nearest.Id });
+        }
+
+        /// <summary>
+        /// Tıklanan noktadaki eşya: yüzeyi noktaya en yakın olan, yani nişangahın değdiği eşya (uzun bardağın üst
+        /// kenarına tıklayınca yanındaki kısa kutu alınmasın). Aday: yüzeyi 3 cm içinde ya da merkezi tutma
+        /// yarıçapında olanlar; küçük eşyalar (dilim, yumurta) için en az 7 cm, el tam üstüne denk gelmese de alınsın.
+        /// </summary>
+        KitchenItem FindGrabbable(Vector3 aimPoint)
+        {
             KitchenItem nearest = null;
             float nearestDistance = float.PositiveInfinity;
 
@@ -380,16 +383,15 @@ namespace Dishaster
             {
                 if (!item.gameObject.activeSelf) continue;
 
-                // Küçük eşyalar (dilim, yumurta) için en az 7 cm: el tam üstüne denk gelmese de alınsın.
-                float distance = Vector3.Distance(item.Center, aimPoint);
-                if (distance > Mathf.Max(item.grabRadius, MinGrabRadius) || distance >= nearestDistance) continue;
+                float surface = item.SurfaceDistance(aimPoint);
+                bool near = surface <= SurfaceGrabTolerance || Vector3.Distance(item.Center, aimPoint) <= Mathf.Max(item.grabRadius, MinGrabRadius);
+                if (!near || surface >= nearestDistance) continue;
 
                 nearest = item;
-                nearestDistance = distance;
+                nearestDistance = surface;
             }
 
-            if (nearest != null)
-                ServerSend(new KitchenEventMessage { type = KitchenEventType.Grab, itemId = nearest.Id });
+            return nearest;
         }
 
         void ServerCut(Vector3 aimPoint)

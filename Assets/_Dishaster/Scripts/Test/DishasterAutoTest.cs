@@ -203,10 +203,20 @@ namespace Dishaster
             yield return Wait();
             Check(counter.Held == null, "çilek tahtaya bırakılamadı");
 
-            // Boş el tahtaya dokunuyor: dışarıdan da el tahtada (gövde eğilerek yetişiyor).
+            // Boş el tahtaya dokunuyor: dışarıdan da el tahtada (gövde eğilerek yetişiyor). Eğilirken nişangah aynı
+            // yerde kalmalı (tıklanan şey nişangahtaki), kamera aşağı dalmamalı.
+            Vector3 aimBefore = LowVisionRole.AimPoint;
             yield return new WaitForSeconds(0.6f);
+            CharacterBody blindBody = player.GetComponentInChildren<CharacterBody>();
+            Vector3 eyeShift = player.playerCamera.transform.position - player.headPivot.position;
+            float aimDrift = Vector3.Distance(aimBefore, LowVisionRole.AimPoint);
+            Log($"[touch] {blindBody.Describe()} | kamera kayması {eyeShift.magnitude * 100f:0} cm, nişangah kayması {aimDrift * 100f:0.0} cm");
+            Check(blindBody.Lean <= 20.5f, "uzanırken çok eğiliyor");
+            Check(eyeShift.magnitude < 0.15f, "uzanırken kamera gözlerden kayıyor (aşağı dalıyor)");
+            Check(aimDrift < 0.02f, "uzanırken nişangahın gösterdiği yer kayıyor");
             yield return Shot("blind_fp_touch");
             yield return Third("blind_3p_touch", player, true);
+            yield return Near("blind_near_touch", player, LowVisionRole.AimPoint, 0.6f);
 
             // Bıçakla doğra.
             KitchenItem knife = counter.Items.First(item => item != null && item.kind == KitchenItemKind.Knife);
@@ -258,7 +268,8 @@ namespace Dishaster
             yield return Pour(counter, cup, () => cup.AmountOf(Ingredient.Milk) >= milk - 8f);
             Log($"bardakta {cup.AmountOf(Ingredient.Milk):0} ml süt");
             Check(recipe.StepState(1) == RecipeStepState.Done, "adım 2 (bardağa dök) tamamlanmadı");
-            yield return Drop(counter, new Vector3(-0.65f, 0f, 0.25f));
+            // Bardağın yanına değil boş yere (ölçü bardağı -0.62, 0.25'te duruyor).
+            yield return Drop(counter, new Vector3(-0.1f, 0f, 0.36f));
 
             // Bardak → kase.
             yield return Grab(counter, cup.Item);
@@ -397,6 +408,34 @@ namespace Dishaster
             if (leftWrist != null) Log($"[{label}] bilekler sol {Local(leftWrist.position)} sağ {Local(rightWrist.position)} | avuç farkı {(body != null ? body.LastSnapDistance * 100f : 0f):0.0} cm");
             if (pencil != null) Log($"[{label}] pencil {Local(pencil.position)} active {pencil.gameObject.activeInHierarchy} rendered {pencil.GetComponent<Renderer>().enabled}");
             if (body != null) Log($"[{label}] {body.Describe()}");
+
+            // Bilek kırık görünmesin; defter kendi ekranını kapatmasın (çizerken hariç).
+            float coverage = Coverage(player.playerCamera, notebook);
+            Log($"[{label}] defter ekranın %{coverage * 100f:0}'ini kaplıyor; sol bilek {body.WristBend(true):0}°");
+            Check(body.WristBend(true) <= 40f, $"{label}: defteri tutan bilek kırık gibi bükülüyor ({body.WristBend(true):0}°)");
+            if (label != "draw") Check(coverage <= 0.25f, $"{label}: defter ekranın çoğunu kaplıyor (%{coverage * 100f:0})");
+        }
+
+        /// <summary>Defterin (kapakla) ekranda kapladığı alan (0-1): ekranda 32x18 noktadan ışın, defterin düzlemine.</summary>
+        static float Coverage(Camera camera, NotebookRole notebook)
+        {
+            Transform book = notebook.notebook;
+            var plane = new Plane(book.forward, book.position);
+            Vector2 half = notebook.pageSize * 0.5f + new Vector2(0.01f, 0.01f);
+            int inside = 0;
+            for (int x = 0; x < 32; x++)
+            {
+                for (int y = 0; y < 18; y++)
+                {
+                    Ray ray = camera.ViewportPointToRay(new Vector3((x + 0.5f) / 32f, (y + 0.5f) / 18f, 0f));
+                    if (!plane.Raycast(ray, out float distance)) continue;
+
+                    Vector3 local = book.InverseTransformPoint(ray.GetPoint(distance));
+                    if (Mathf.Abs(local.x) <= half.x && Mathf.Abs(local.y) <= half.y) inside++;
+                }
+            }
+
+            return inside / (32f * 18f);
         }
 
         // ── Boşta (Duymadım): eller köşede, kıpırdamıyor ─────────────────────
@@ -732,31 +771,80 @@ namespace Dishaster
         Vector3 _spawnPosition;
         Quaternion _spawnRotation;
 
-        /// <summary>Oyuncuyu hedefin önüne koyup ona baktırıyor: el (bakış ışını) gerçekten oraya gidiyor.</summary>
-        IEnumerator Approach(Vector3 point)
+        /// <summary>
+        /// Oyuncuyu hedefin önüne koyup nişangahı (kamerayı) ona çeviriyor: oyuncunun fareyle yaptığı gibi. Kamera
+        /// gözlerde, kafa pivotundan biraz farklı yerde; birkaç kare yerine oturuyor.
+        /// </summary>
+        IEnumerator Approach(Vector3 point, KitchenItem item = null)
         {
             if (_player == null) yield break;
 
+            // Oyuncunun yürüyüp duracağı gibi: önce merkeze bakan taraftan, yakından; kapsül bir yere girmiyorsa ve
+            // nişangah hedefi görüyorsa (raf, dolap duvarı arada değilse) orada kalıyor.
             Vector3 flat = new Vector3(point.x, 0f, point.z);
-            Vector3 away = flat.magnitude < 1.5f ? Vector3.back : -flat.normalized;
+            Vector3 first = flat.magnitude < 1.5f ? Vector3.back : -flat.normalized;
             CharacterController controller = _player.GetComponent<CharacterController>();
+            float[] distances = { 0.55f, 0.75f, 0.95f };
+            int[] turns = { 0, 1, -1, 2, -2, 3, -3, 4 };
+            Vector3? fallback = null;
+            foreach (float distance in distances)
+            {
+                foreach (int turn in turns)
+                {
+                    Vector3 position = new Vector3(point.x, 1.05f, point.z) + Quaternion.Euler(0f, 45f * turn, 0f) * first * distance;
+                    controller.enabled = false;
+                    bool blocked = Physics.CheckCapsule(position + Vector3.down * 0.6f, position + Vector3.up * 0.7f, controller.radius * 0.9f,
+                        Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+                    if (blocked)
+                    {
+                        controller.enabled = true;
+                        continue;
+                    }
+
+                    fallback ??= position;
+                    yield return StandAndAim(controller, position, point);
+
+                    Transform view = _player.playerCamera.transform;
+                    if (!Physics.Raycast(view.position, view.forward, out RaycastHit hit, 1.45f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide)) continue;
+                    bool sees = item != null ? hit.collider.GetComponentInParent<KitchenItem>() == item : Vector3.Distance(hit.point, point) < 0.08f;
+                    if (sees) yield break;
+                }
+            }
+
+            Log($"[grab] {(item != null ? item.name : point.ToString("F2"))}: nişangahla görülen bir yer bulunamadı");
+            if (fallback.HasValue) yield return StandAndAim(controller, fallback.Value, point);
+        }
+
+        IEnumerator StandAndAim(CharacterController controller, Vector3 position, Vector3 point)
+        {
             controller.enabled = false;
-            _player.transform.position = new Vector3(point.x, 1.05f, point.z) + away * 0.75f;
+            _player.transform.position = position;
             controller.enabled = true;
 
-            for (int i = 0; i < 3; i++)
+            float until = Time.time + 0.35f;
+            while (Time.time < until)
             {
-                _player.FaceTowards(point);
+                Transform aim = _player.playerCamera.transform;
+                _player.FaceTowards(_player.headPivot.position + (point - aim.position));
                 yield return null;
             }
         }
 
+        /// <summary>Nişangahtaki eşyaya sol tık: gönderilen nokta görmeyenin bakış ışınından (oyundaki gibi).</summary>
         IEnumerator Grab(KitchenCounter counter, KitchenItem item)
         {
-            yield return Approach(item.Center);
-            counter.RequestGrabOrDrop(item.Center);
+            yield return Approach(item.Center, item);
+            Check(LowVisionRole.Touching, "nişangahtaki eşyaya el değmiyor: " + item.name);
+            Vector3 aim = LowVisionRole.AimPoint;
+            counter.RequestGrabOrDrop(aim);
             yield return Wait();
-            Check(counter.Held == item, "alınamadı: " + item.name);
+            Check(counter.Held == item, "nişangahtaki eşya alınamadı: " + item.name);
+            if (counter.Held != item)
+            {
+                Transform view = _player.playerCamera.transform;
+                Physics.Raycast(view.position, view.forward, out RaycastHit hit, 3f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
+                Log($"[grab] {item.name}: elde {(counter.Held != null ? counter.Held.name : "yok")}, nişangah {aim.ToString("F2")} eşya {item.Center.ToString("F2")} fark {Vector3.Distance(aim, item.Center) * 100f:0} cm, ışın {(hit.collider != null ? hit.collider.name : "-")} {hit.distance:0.00} m, kamera {view.position.ToString("F2")}");
+            }
         }
 
         IEnumerator Drop(KitchenCounter counter, Vector3 local)

@@ -12,9 +12,6 @@ namespace Dishaster
         // FP_Poses'ta kapalı kare (8 tutma, 2 yumruk); parmaklar açık kare (1) ile bu kare arasında, curl kadar.
         public int closedFrame;
         public float curl;
-        // Kanca: parmaklar sadece köklerinden bükülüyor, boğumlar düz (ince bir kenarı arkadan kavramak için:
-        // yumruk gibi kapanınca parmaklar defterin içinden geçiyordu).
-        public bool hook;
     }
 
     /// <summary>
@@ -87,34 +84,32 @@ namespace Dishaster
                 }
             }
 
-            // Görmedim kendi ekranında boştaki ellerini göğüs önünde görüyor (yoklar gibi öne uzanmış). Başkaları bunu
-            // görmüyor (onlarda kollar yanda sallanıyor). Diğer rollerde boştaki kollar yanda, aşağı bakınca görünüyor.
-            if (player.isLocalPlayer && !player.ControlBlocked && player.role == MonkeyRoles.LowVision)
+            // Görmedim kendi ekranında iki eli de boştayken onları göğüs önünde görüyor (yoklar gibi öne uzanmış); sağ
+            // el bir şeye dokunur ya da tutarken sol el yana iniyor (ekranı kapatmasın). Başkaları bunu görmüyor
+            // (onlarda kollar yanda sallanıyor). Diğer rollerde boştaki kollar yanda, aşağı bakınca görünüyor.
+            if (player.isLocalPlayer && !player.ControlBlocked && player.role == MonkeyRoles.LowVision && !right.active)
             {
-                if (!left.active) left = Ready(player, true);
-                if (!right.active) right = Ready(player, false);
+                left = Ready(player, true);
+                right = Ready(player, false);
             }
         }
 
         /// <summary>
-        /// Sol el defteri alttan tutuyor: avuç yukarı, alt kenar avucun üstünde, parmaklar kökten bükülüp kapağın
-        /// arkasına yaslanıyor (kanca), başparmak önde. Parmaklar ileri-sağa (ön kol gövdenin önüne doğru, bilek düz).
-        /// Gösterirken defter avucun üstünde saat yönünün tersine (üstten) 180° dönüyor, el 90°: ön kol dirsekten
-        /// dışarı açılıyor (doğal sınır), parmaklar sola bakıyor, el tepsi gibi açılıyor.
+        /// Sol el defteri alttan taşıyor (yer ve yön NotebookRole'dan): tutarken avuç arka kapağa yaslı, parmaklar
+        /// kapak boyunca açık; gösterirken defter alt kenarıyla avucun üstünde, el saat yönünün tersine dönmüş,
+        /// parmaklar karşıya. Ön kol elin devamı, bilek düz.
         /// </summary>
         static HandGoal NotebookGrip(NotebookRole notebook)
         {
-            Transform book = notebook.notebook;
-            float turn = notebook.TurnFraction;
+            Quaternion grip = notebook.LeftGripRotation;
             return new HandGoal
             {
                 active = true,
                 palm = notebook.LeftGripPoint,
-                fingers = Quaternion.AngleAxis(Mathf.Lerp(30f, 120f, turn), book.up) * book.forward,
-                palmFacing = book.up,
-                closedFrame = FrameFist,
-                curl = Mathf.Lerp(0.9f, 0.15f, turn),
-                hook = true,
+                fingers = grip * Vector3.forward,
+                palmFacing = grip * Vector3.up,
+                closedFrame = FrameGrip,
+                curl = notebook.LeftGripCurl,
             };
         }
 
@@ -221,21 +216,10 @@ namespace Dishaster
                 : Quaternion.identity;
         }
 
-        /// <summary>
-        /// Bir parmak kemiğinin dönüşü: açık ile kapalı arasında. Kancada kök kemik (1) çok, boğumlar (2, 3) az
-        /// bükülüyor; başparmak kancada az kapanıyor (önde, kenarın altında).
-        /// </summary>
-        public static Quaternion Finger(string bone, Quaternion open, Quaternion closed, HandGoal goal)
+        /// <summary>Bir parmak kemiğinin dönüşü: açık ile kapalı arasında, curl kadar.</summary>
+        public static Quaternion Finger(Quaternion open, Quaternion closed, HandGoal goal)
         {
-            float amount = goal.curl;
-            if (goal.hook)
-            {
-                char last = bone[bone.Length - 1];
-                float segment = bone.Contains("Thumb") ? 0.25f : last == '1' ? 1f : last == '2' ? 0.18f : 0.1f;
-                amount *= segment;
-            }
-
-            return Quaternion.Slerp(open, closed, amount);
+            return Quaternion.Slerp(open, closed, goal.curl);
         }
     }
 }

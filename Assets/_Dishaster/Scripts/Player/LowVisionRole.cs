@@ -42,6 +42,9 @@ namespace Dishaster
         /// <summary>El şu an bir yüzeye/eşyaya değiyor mu (uzaktakilerde mesajla geliyor): değmiyorsa el boşta ya da taşıyor.</summary>
         public static bool Touching => s_instance != null && s_instance._touching;
 
+        /// <summary>Kendi makinesinde: tıklayınca gönderilen nokta (nişangahın değdiği yer). Test de buradan tıklıyor.</summary>
+        public static Vector3 AimPoint => s_instance != null ? s_instance._aimPoint : Vector3.zero;
+
         /// <summary>Bu makinedeki oyuncu görmeyen mi: kaplardaki miktar ona hiç çizilmiyor.</summary>
         public static bool LocalIsLowVision { get; private set; }
 
@@ -53,6 +56,7 @@ namespace Dishaster
         public Collider boardBarrier;
 
         [Header("El (metre)")]
+        [Tooltip("Gözden (nişangahtan): bu kadar yakındaki yüzeye/eşyaya el değiyor. Buzdolabının alt rafına üst rafın altından bakabilmek için bu kadar.")]
         public float reach = 1.45f;
         public float restDistance = 0.55f;
 
@@ -116,7 +120,7 @@ namespace Dishaster
         {
             s_instance = this;
 
-            // Küp el artık sadece hedef (tutulan eşyalar buna bağlı): görünen el karakterin kendisi (IK) ve FPS eli.
+            // Küp el artık sadece hedef (tutulan eşyalar buna bağlı): görünen el karakterin kendisi (IK).
             foreach (Transform part in hand)
                 if (part.TryGetComponent(out Renderer renderer)) renderer.enabled = false;
         }
@@ -170,18 +174,23 @@ namespace Dishaster
 
         void UpdateOwnHand()
         {
-            // Kafa (kamera uzanırken öne kayıyor; ışın ondan bağımsız olsun, el ile kamera birbirini kovalamasın).
-            Transform view = _player.headPivot;
+            // Işın kameradan (nişangah): tıklanan şey nişangahtaki. Kamera eğilince sadece bakış yönünde kaydığı için
+            // ışın uzanmayla değişmiyor (el ile kamera birbirini kovalamıyor). İnceleme gibi kamera başka yerdeyken
+            // gözlerden. Taşıma yeri kafaya göre.
+            Transform head = _player.headPivot;
+            Transform view = _player.playerCamera.transform;
+            Vector3 origin = _player.ControlBlocked ? head.TransformPoint(_player.CameraOffset) : view.position;
+            Vector3 direction = _player.ControlBlocked ? head.forward : view.forward;
             KitchenItem held = HeldItem;
 
             // Eşyalar trigger; oyuncunun kendi kapsülünü ışın içinden başladığı için görmüyor.
-            bool touching = Physics.Raycast(view.position, view.forward, out RaycastHit hit, reach, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
+            bool touching = Physics.Raycast(origin, direction, out RaycastHit hit, reach, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
             _touching = touching;
             _aimPoint = touching
                 ? hit.point + hit.normal * SurfaceOffset
-                : view.position + view.forward * restDistance + Vector3.down * RestDrop;
+                : origin + direction * restDistance + Vector3.down * RestDrop;
 
-            float yaw = view.eulerAngles.y;
+            float yaw = head.eulerAngles.y;
             Quaternion rotation = Quaternion.Euler(0f, yaw, 0f);
 
             // Değiyorsa el oraya uzanıyor (eşya tutuyorsa eşya oraya gelecek şekilde); değmiyorsa göğüs önünde.
@@ -193,8 +202,8 @@ namespace Dishaster
             }
             else
             {
-                float pitch = Mathf.DeltaAngle(0f, view.eulerAngles.x);
-                target = view.position + Quaternion.Euler(pitch * CarryPitchFollow, yaw, 0f) * CarryOffset;
+                float pitch = Mathf.DeltaAngle(0f, head.eulerAngles.x);
+                target = head.position + Quaternion.Euler(pitch * CarryPitchFollow, yaw, 0f) * CarryOffset;
             }
 
             Transform body = _player.transform;

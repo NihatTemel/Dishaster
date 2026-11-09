@@ -139,7 +139,7 @@ namespace Dishaster.EditorTools
 
             var controller = go.AddComponent<CharacterController>();
             controller.height = 2f;
-            controller.radius = 0.5f;
+            controller.radius = 0.3f;
 
             // Bakış: gövde sağa-sola (root), kafa yukarı-aşağı (HeadPivot) dönüyor.
             var headObject = new GameObject("HeadPivot");

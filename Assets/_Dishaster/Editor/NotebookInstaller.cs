@@ -14,7 +14,7 @@ namespace Dishaster.EditorTools
     [InitializeOnLoad]
     public static class NotebookInstaller
     {
-        const string Version = "16";
+        const string Version = "17";
         const string VersionFile = "ProjectSettings/DishasterNotebook.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/NotebookRole.prefab";
         const string PageMaterialPath = "Assets/_Dishaster/Materials/M_NotebookPage.mat";
@@ -29,7 +29,7 @@ namespace Dishaster.EditorTools
         };
 
         // Texture ile aynı oran (2:1).
-        static readonly Vector2 PageSize = new Vector2(0.5f, 0.25f);
+        static readonly Vector2 PageSize = new Vector2(0.36f, 0.18f);
         const float CoverThickness = 0.012f;
 
         static readonly Color ToolbarColor = new Color(0.19f, 0.18f, 0.22f);

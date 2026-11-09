@@ -78,6 +78,13 @@ namespace Dishaster
             Ingredient = GetComponent<KitchenIngredientItem>();
         }
 
+        /// <summary>Noktanın eşyanın yüzeyine (dokunma kutusuna) uzaklığı; kutu kapalıysa merkezine.</summary>
+        public float SurfaceDistance(Vector3 point)
+        {
+            if (_collider == null || !_collider.enabled) return Vector3.Distance(Center, point);
+            return Vector3.Distance(_collider.ClosestPoint(point), point);
+        }
+
         /// <summary>Tutulurken kapalı: el ışını kendi tuttuğu eşyaya çarpmasın.</summary>
         public void SetTouchable(bool touchable)
         {

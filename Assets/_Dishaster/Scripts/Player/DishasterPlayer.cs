@@ -46,7 +46,7 @@ namespace Dishaster
         /// <summary>İnceleme gibi kamerayı başka yere alan modlar: yürüme, bakış ve el/defter girişleri duruyor.</summary>
         public bool ControlBlocked { get; set; }
 
-        /// <summary>Kameranın kafa pivotuna göre yeri: karakterin gerçek gözleri (eğilince, uzanınca). CharacterBody veriyor.</summary>
+        /// <summary>Kameranın kafa pivotuna göre kayması: uzanıp eğilince bakış yönünde öne (nişangah aynı yerde). CharacterBody veriyor.</summary>
         public Vector3 CameraOffset { get; set; }
 
         [Server]
