@@ -30,10 +30,17 @@ Son güncelleme: 9 Kasım 2026.
 | `PF_Duvar_Dolabi_100` | `MutfakModulu` | 100 × 70 × 80 cm, yerden 160–240 cm | iki kapak / tek / açık; kulp (kapağın altına yakın); raf |
 | `PF_Kose_L` | `KoseModulu` | 120 ya da 170 cm her kol | arka kol ve yan kol boyu (50 / 100'lük dolap); tezgahın boş uçları |
 | `PF_Duvar_Rafi_150` | `RafModulu` | 150 × 54 cm | kat sayısı 1–4, ilk kat yüksekliği, kat arası |
+| `PF_Ada_200` | `AdaModulu` | 200 × 150 × 90 cm | ön ve arka sırada ikişer 100'lük yuva: her biri `Kapali` (düz panel) ya da `Dolap` |
 
-Dolap, L köşe ve duvar dolabının kökünde ayrıca `MobilyaRengi` var (renk teması).
+Dolap, L köşe, ada ve duvar dolabının kökünde ayrıca `MobilyaRengi` var (renk teması).
 
-`Prefabs/Parcalar/` yalnızca hiçbir modülde olmayan ada parçalarını tutar: `PF_Top_Island_200x150`, `PF_Island_Top_050/100`, `PF_Island_Carcass_050/100` (her biri kök + `Model`).
+`Prefabs/Parcalar/` yalnızca hiçbir modülde olmayan küçük ada parçalarını tutar: `PF_Island_Top_050/100`, `PF_Island_Carcass_050` (her biri kök + `Model`).
+
+### `AdaModulu` (`PF_Ada_200`)
+
+- 200 × 150 cm tezgah (`Tezgah`, her kenarı yuvarlak), altında sırt sırta iki sıra: ön sıra +Z'ye, arka sıra −Z'ye bakar. Tezgah önde ve arkada 5 cm taşar, yanlarda gövdeyle hizalı (gövdeler 2 × 1,4 m).
+- `onSol`, `onSag`, `arkaSol`, `arkaSag` (sol/sağ: önden bakınca): `Kapali` = düz panel (`*_Kapali`), `Dolap` = `PF_Dolap_100` kopyası (`*_Dolap`, iç içe prefab, tezgahı kapalı; kapak/çekmece ayarı için o dolabı seç). Varsayılan: ön sıra dolap, arka sıra kapalı.
+- Pivot: tezgahın sol-arka-alt köşesi, yerde. Arka sıradaki dolaplar 180° döndürülmüş; kapak ve çekmece yerel değerleri aynı geçerli.
 
 ### `MutfakModulu` (düz dolaplar, lavabo, duvar dolabı)
 
@@ -124,7 +131,7 @@ Assets/ART/3D/Furniture/
   Materials/M_Furniture_Trim[_<Renk>].mat    Standard (Metallic)
   Prefabs/PF_*.prefab            modüller
   Prefabs/Parcalar/PF_*.prefab   ada parçaları
-  Scripts/MutfakModulu.cs, KoseModulu.cs, RafModulu.cs, MobilyaRengi.cs   (oyunda da çalışır)
+  Scripts/MutfakModulu.cs, KoseModulu.cs, RafModulu.cs, AdaModulu.cs, MobilyaRengi.cs   (oyunda da çalışır)
   Editor/MobilyaKurulum.cs       menü
   Editor/MutfakModuluEditor.cs   sade inspector
 ```

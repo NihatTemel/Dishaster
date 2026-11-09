@@ -99,17 +99,63 @@ public static class MobilyaKurulum
 
         KoseL(mat);
         DuvarRafi(mat);
+        Ada(mat);
 
         AssetDatabase.SaveAssets();
-        Debug.Log($"Mobilya kurulum: bitti ({fbxs.Length} parca; 5 dolap, L kose, duvar rafi).");
+        Debug.Log($"Mobilya kurulum: bitti ({fbxs.Length} parca; 5 dolap, L kose, duvar rafi, ada).");
     }
 
-    // Tek basina prefabi yapilan parcalar (bir modulun icinde olmayanlar)
+    // Tek basina prefabi yapilan parcalar (bir modulun icinde olmayanlar). Ada tezgahi ve 100'luk ada govdesi
+    // artik PF_Ada_200'un icinde; kalan kucuk ada parcalari burada.
     static readonly string[] TekParcalar =
     {
-        "SM_Top_Island_200x150", "SM_Island_Top_050", "SM_Island_Top_100",
-        "SM_Island_Carcass_050", "SM_Island_Carcass_100",
+        "SM_Island_Top_050", "SM_Island_Top_100", "SM_Island_Carcass_050",
     };
+
+    // ---------- ada (200 x 150) ----------
+    // Blender'da: tezgah x 0..2, y -1,5..0. On sira govdeleri y -1,45..-0,75 (one bakar), arka sira 180 derece
+    // donuk y -0,75..-0,05 (arkaya bakar). Her sira iki 100'luk yuva.
+    static void Ada(Material mat)
+    {
+        string pfPath = $"{Root}/Prefabs/PF_Ada_200.prefab";
+        bool exists = File.Exists(pfPath);
+        var root = exists ? PrefabUtility.LoadPrefabContents(pfPath) : new GameObject("PF_Ada_200");
+        try
+        {
+            var m = root.GetComponent<AdaModulu>();
+            if (!m) m = root.AddComponent<AdaModulu>();
+            Parca(root, "Tezgah", "SM_Top_Island_200x150", Vector3.zero, mat);
+
+            GameObject Yuva(string ad, float x, bool arka, out GameObject dolap)
+            {
+                var pos = B(x, -0.75f, 0f);
+                float rot = arka ? 180f : 0f;
+                var kapali = Parca(root, ad + "_Kapali", "SM_Island_Carcass_100", pos, mat, rot);
+                dolap = IcDolap(root, ad + "_Dolap", "PF_Dolap_100");
+                if (dolap)
+                {
+                    dolap.transform.localPosition = pos;
+                    dolap.transform.localRotation = Quaternion.Euler(0f, rot, 0f);
+                }
+                return kapali;
+            }
+            // On sira pivotu yuvanin sol-arka kosesi; arka sira donuk oldugu icin pivotu yuvanin sag ucunda
+            m.onSolKapali = Yuva("On_Sol", 0f, false, out m.onSolDolap);
+            m.onSagKapali = Yuva("On_Sag", 1f, false, out m.onSagDolap);
+            m.arkaSolKapali = Yuva("Arka_Sol", 1f, true, out m.arkaSolDolap);
+            m.arkaSagKapali = Yuva("Arka_Sag", 2f, true, out m.arkaSagDolap);
+
+            m.Uygula();
+            RenkEkle(root);
+            PrefabUtility.SaveAsPrefabAsset(root, pfPath);
+        }
+        finally
+        {
+            if (exists) PrefabUtility.UnloadPrefabContents(root);
+            else Object.DestroyImmediate(root);
+        }
+        Debug.Log("Mobilya kurulum: PF_Ada_200");
+    }
 
     // Artik kullanilmayan prefablar (yerlerine moduller geldi). Varsa silinir.
     static void EskileriSil()
