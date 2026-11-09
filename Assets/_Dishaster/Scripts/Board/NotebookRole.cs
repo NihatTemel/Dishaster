@@ -53,18 +53,13 @@ namespace Dishaster
         /// Sol avucun yeri: alt kenarın sol çeyreğinin hemen altı. El defteri tablet gibi alttan kavrıyor (avuç yukarı,
         /// parmaklar kapağın arkasında, başparmak sayfada); defter dönünce el de onunla dönüyor.
         /// </summary>
-        public Vector3 LeftGripPoint => notebook.TransformPoint(new Vector3(-pageSize.x * 0.25f, -pageSize.y * 0.5f - 0.03f, 0.015f));
+        public Vector3 LeftGripPoint => notebook.TransformPoint(new Vector3(-pageSize.x * 0.25f, -pageSize.y * 0.5f - 0.018f, 0.015f));
 
         /// <summary>Kalemi tutan avucun yeri: kalemin ortasından biraz yukarısı.</summary>
         public Vector3 PenGripPoint => _pencil != null ? _pencil.position + _pencil.up * 0.035f : rightHand.position;
 
         /// <summary>Kalemin ucu (sayfaya değen nokta).</summary>
         public Vector3 PenTip => rightHand.position;
-
-        /// <summary>FPS sol elinin, tutma duruşuna göre defterle birlikte dönmesi.</summary>
-        public Quaternion LeftHandTurn => _owner != null
-            ? notebook.rotation * Quaternion.Inverse(_owner.headPivot.rotation * Quaternion.Euler(holdRotation))
-            : Quaternion.identity;
 
         [Header("Referanslar")]
         public Transform rig;
@@ -83,12 +78,14 @@ namespace Dishaster
         public Vector3 drawRotation = Vector3.zero;
         public Vector3 showHand = new Vector3(-0.12f, -0.3f, 0.5f);
         public Vector3 showRotation = new Vector3(0f, 180f, 0f);
-        [Tooltip("Diğer oyuncularda defter bu kadar öne alınıyor: gövdenin (kapsül) içinde kalmasın.")]
-        public float remoteForward = 0.1f;
-        [Tooltip("Diğer oyuncularda defter bu kadar aşağıda: kendi ekranında görünsün diye göze yakın tutuluyor, dışarıdan göğüs hizasında.")]
-        public float remoteDown = 0.28f;
-        [Tooltip("Gösterirken dışarıdan biraz daha yukarıda: karşıdakinin göz hizasına yakın.")]
+        [Tooltip("Diğer oyuncularda defter bu kadar öne (eksi: geri) alınıyor: kendi ekranındaki yer kol boyunun ucunda, dışarıdan dirsek bükük, göğüs önünde.")]
+        public float remoteForward = -0.12f;
+        [Tooltip("Diğer oyuncularda defter bu kadar aşağıda: kendi ekranında görünsün diye göze yakın tutuluyor, dışarıdan göğüs/karın hizasında (kol aşağıda, ön kol yatay).")]
+        public float remoteDown = 0.42f;
+        [Tooltip("Gösterirken dışarıdan biraz daha yukarıda: karşıdakinin göğsü hizasında.")]
         public float remoteShowUp = 0.22f;
+        [Tooltip("Diğer oyuncularda defter bakışın eğimini bu kadar izliyor: yukarı bakınca defter kafanın üstüne çıkmasın.")]
+        [Range(0f, 1f)] public float remotePitchFollow = 0.4f;
 
         [Header("Sağ el (deftere göre)")]
         public Vector3 penLift = new Vector3(0f, 0f, -0.004f);
@@ -411,10 +408,18 @@ namespace Dishaster
                 _drawBlend = Mathf.Max(_drawBlend, 1f - settle);
             }
 
-            // Defter, tutma noktası (sol elin yeri) elde olacak şekilde konuyor.
+            // Defter, tutma noktası (sol elin yeri) elde olacak şekilde konuyor. Kendi ekranında bakışa tam bağlı;
+            // dışarıdan eğimi azaltılmış (yukarı/aşağı bakınca kol omuzdan dönüp durmasın).
             Vector3 localPosition = _handPosition - _localRotation * leftHand.localPosition;
             Transform head = _owner.headPivot;
-            notebook.SetPositionAndRotation(head.TransformPoint(localPosition), head.rotation * _localRotation);
+            Quaternion frame = head.rotation;
+            if (!_isLocal)
+            {
+                float pitch = Mathf.DeltaAngle(0f, head.localEulerAngles.x);
+                frame = _owner.transform.rotation * Quaternion.Euler(pitch * remotePitchFollow, 0f, 0f);
+            }
+
+            notebook.SetPositionAndRotation(head.position + frame * localPosition, frame * _localRotation);
 
             UpdateRightHand();
         }

@@ -58,7 +58,7 @@ namespace Dishaster
             body.transform.localPosition = new Vector3(0f, feetOffset, 0f);
             body.transform.localRotation = Quaternion.identity;
 
-            body.AddComponent<CharacterBody>().Setup(player, controller, character.lidAngle, MonkeyRoles.IsMouthTied(player.role));
+            body.AddComponent<CharacterBody>().Setup(player, controller, character.lidAngle, MonkeyRoles.IsMouthTied(player.role), character.hands, character.handPoses);
 
             // Kapsül ve vizör artık karakterin kendisi.
             player.bodyRenderer.enabled = false;

@@ -230,22 +230,6 @@ namespace Dishaster
 
         static Vector3 HoldPosition(KitchenItem item) => new Vector3(0f, PalmTop, item.holdForward);
 
-        /// <summary>
-        /// Tutulan eşyayı kavrayan avucun yeri ve eşyanın tutuşa göre dönüşü (bıçak inip kalkarken, kap dökerken
-        /// eğilirken el de eşyayla gidiyor). Görünen eller (karakter IK'sı ve FPS eli) buna uyuyor.
-        /// </summary>
-        public bool TryGetHeldGrip(out Vector3 palm, out Quaternion turn)
-        {
-            palm = default;
-            turn = Quaternion.identity;
-            if (_held == null || _held.transform.parent == null) return false;
-
-            Transform hand = _held.transform.parent;
-            palm = _held.transform.TransformPoint(-HoldPosition(_held));
-            turn = _held.transform.rotation * Quaternion.Inverse(hand.rotation);
-            return true;
-        }
-
         static float FlatDistance(Vector3 a, Vector3 b)
         {
             a.y = 0f;

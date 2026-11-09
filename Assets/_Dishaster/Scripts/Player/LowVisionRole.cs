@@ -3,15 +3,18 @@ using UnityEngine;
 
 namespace Dishaster
 {
+    /// <summary>El, görmeyen oyuncunun kendi uzayında (kökü ve yönüne göre): uzakta da gövdeyle birlikte gidiyor.</summary>
     public struct LowVisionHandMessage : NetworkMessage
     {
         public Vector3 position;
         public float yaw;
+        public bool touching;
     }
 
     /// <summary>
     /// Görmeyen oyuncuya özel kurulum (prefab). Normal yürüyor ama ekranı siyah. Eli baktığı yere uzanıyor:
-    /// kol boyunda bir yüzeye değince oradaki hatlar beliriyor, el gidince kapanıyor. Sol tık al/bırak ya da kapak
+    /// kol boyunda bir yüzeye değince oradaki hatlar beliriyor, el gidince kapanıyor. Değmiyorken el göğüs önünde
+    /// (eşya taşıyorsa eşya orada); uzaktakiler eli ve eşyayı aynı yerde görüyor. Sol tık al/bırak ya da kapak
     /// aç/kapa, sağ tık kes; elde dökülebilen bir kap varken sağ tık basılı tutulunca döküyor (bkz. KitchenCounter). Diğer oyuncular eli görüyor (Mirror mesajı): tahtadaki gibi sahne objesine
     /// NetworkIdentity gerekmesin diye.
     /// </summary>
@@ -25,10 +28,19 @@ namespace Dishaster
         const float PalmAboveSurface = 0.02f;
         const float RestDrop = 0.1f;
 
+        // Bir yere dokunmuyorken el (ve tutulan eşya) göğüs önünde: sağda, aşağıda, öne doğru. Bakışın eğimini
+        // yarı yarıya izliyor: aşağı bakınca elindekini görüyor, düz bakınca ekranın sağ altında; dışarıdan da
+        // eşya göğüs hizasında (yüzünde değil).
+        static readonly Vector3 CarryOffset = new Vector3(0.17f, -0.4f, 0.4f);
+        const float CarryPitchFollow = 0.5f;
+
         static LowVisionRole s_instance;
 
         /// <summary>Tutulan eşyalar bu ele bağlanıyor.</summary>
         public static Transform Hand => s_instance != null ? s_instance.hand : null;
+
+        /// <summary>El şu an bir yüzeye/eşyaya değiyor mu (uzaktakilerde mesajla geliyor): değmiyorsa el boşta ya da taşıyor.</summary>
+        public static bool Touching => s_instance != null && s_instance._touching;
 
         /// <summary>Bu makinedeki oyuncu görmeyen mi: kaplardaki miktar ona hiç çizilmiyor.</summary>
         public static bool LocalIsLowVision { get; private set; }
@@ -64,10 +76,17 @@ namespace Dishaster
         bool _resolved;
         bool _controlsHand;
         bool _hasRemoteTarget;
+        bool _touching;
+        bool _lastSentTouching;
         DishasterPlayer _player;
         Vector3 _aimPoint;
+        // El oyuncunun uzayında yumuşuyor: yürürken/dönerken eşya elde geride kalmıyor, uzaktakilerde de gövdeyle gidiyor.
+        Vector3 _handLocal;
         Vector3 _remoteTarget;
         float _remoteYaw;
+        Vector3 _remoteLocal;
+        float _remoteYawSmoothed;
+        DishasterPlayer _remotePlayer;
         Vector3 _lastSent;
         float _lastSentYaw;
         float _nextSendTime;
@@ -85,8 +104,10 @@ namespace Dishaster
 
         KitchenItem HeldItem => KitchenCounter.Instance != null ? KitchenCounter.Instance.Held : null;
 
-        /// <summary>Kol boyundaki dokunma noktası; görüş buradan açılıyor.</summary>
-        public Vector3 TouchCenter => _aimPoint;
+        /// <summary>
+        /// Kol boyundaki dokunma noktası; görüş buradan açılıyor. Bir yere değmeden bir şey taşırken elindeki eşya.
+        /// </summary>
+        public Vector3 TouchCenter => !_touching && HeldItem != null ? HeldItem.Center : _aimPoint;
 
         // Elde tutulan eşya görünür kalıyor: bıçak gibi uzun olanlar için alan eşyaya göre açılıyor.
         public float TouchRadius => HeldItem != null ? Mathf.Max(touchRadius, HeldItem.grabRadius * HeldTouchScale) : touchRadius;
@@ -133,6 +154,7 @@ namespace Dishaster
             _controlsHand = true;
             LocalIsLowVision = true;
             _aimPoint = hand.position;
+            _handLocal = player.transform.InverseTransformPoint(hand.position);
             hand.gameObject.SetActive(true);
             boardBarrier.enabled = true;
 
@@ -153,6 +175,7 @@ namespace Dishaster
 
             // Eşyalar trigger; oyuncunun kendi kapsülünü ışın içinden başladığı için görmüyor.
             bool touching = Physics.Raycast(view.position, view.forward, out RaycastHit hit, reach, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
+            _touching = touching;
             _aimPoint = touching
                 ? hit.point + hit.normal * SurfaceOffset
                 : view.position + view.forward * restDistance + Vector3.down * RestDrop;
@@ -160,10 +183,22 @@ namespace Dishaster
             float yaw = view.eulerAngles.y;
             Quaternion rotation = Quaternion.Euler(0f, yaw, 0f);
 
-            Vector3 target = _aimPoint + Vector3.up * PalmAboveSurface;
-            if (held != null) target -= rotation * Vector3.forward * held.reachBack;
+            // Değiyorsa el oraya uzanıyor (eşya tutuyorsa eşya oraya gelecek şekilde); değmiyorsa göğüs önünde.
+            Vector3 target;
+            if (touching)
+            {
+                target = _aimPoint + Vector3.up * PalmAboveSurface;
+                if (held != null) target -= rotation * Vector3.forward * held.reachBack;
+            }
+            else
+            {
+                float pitch = Mathf.DeltaAngle(0f, view.eulerAngles.x);
+                target = view.position + Quaternion.Euler(pitch * CarryPitchFollow, yaw, 0f) * CarryOffset;
+            }
 
-            hand.SetPositionAndRotation(Vector3.Lerp(hand.position, target, 1f - Mathf.Exp(-HandSmoothing * Time.deltaTime)), rotation);
+            Transform body = _player.transform;
+            _handLocal = Vector3.Lerp(_handLocal, body.InverseTransformPoint(target), 1f - Mathf.Exp(-HandSmoothing * Time.deltaTime));
+            hand.SetPositionAndRotation(body.TransformPoint(_handLocal), rotation);
 
             // İmleç serbestse ESC menüsü açık demek.
             UpdateHint();
@@ -175,13 +210,16 @@ namespace Dishaster
                 if (Input.GetMouseButton(1)) KitchenCounter.Instance.RequestPour(_aimPoint);
             }
 
-            Vector3 position = hand.position;
-            if ((position != _lastSent || !Mathf.Approximately(yaw, _lastSentYaw)) && Time.time >= _nextSendTime)
+            Vector3 position = _handLocal;
+            float relativeYaw = Mathf.DeltaAngle(body.eulerAngles.y, yaw);
+            bool changed = position != _lastSent || !Mathf.Approximately(relativeYaw, _lastSentYaw) || touching != _lastSentTouching;
+            if (changed && Time.time >= _nextSendTime)
             {
                 _lastSent = position;
-                _lastSentYaw = yaw;
+                _lastSentYaw = relativeYaw;
+                _lastSentTouching = touching;
                 _nextSendTime = Time.time + HandSendInterval;
-                NetworkClient.Send(new LowVisionHandMessage { position = position, yaw = yaw }, Channels.Unreliable);
+                NetworkClient.Send(new LowVisionHandMessage { position = position, yaw = relativeYaw, touching = touching }, Channels.Unreliable);
             }
         }
 
@@ -227,10 +265,23 @@ namespace Dishaster
         {
             if (!_hasRemoteTarget) return;
 
+            if (_remotePlayer == null)
+            {
+                foreach (NetworkIdentity identity in NetworkClient.spawned.Values)
+                    if (identity != null && identity.TryGetComponent(out DishasterPlayer player) && player.role == MonkeyRoles.LowVision)
+                        _remotePlayer = player;
+
+                if (_remotePlayer == null) return;
+                _remoteLocal = _remoteTarget;
+                _remoteYawSmoothed = _remoteYaw;
+            }
+
             float blend = 1f - Mathf.Exp(-RemoteHandSmoothing * Time.deltaTime);
-            hand.SetPositionAndRotation(
-                Vector3.Lerp(hand.position, _remoteTarget, blend),
-                Quaternion.Slerp(hand.rotation, Quaternion.Euler(0f, _remoteYaw, 0f), blend));
+            _remoteLocal = Vector3.Lerp(_remoteLocal, _remoteTarget, blend);
+            _remoteYawSmoothed = Mathf.LerpAngle(_remoteYawSmoothed, _remoteYaw, blend);
+
+            Transform body = _remotePlayer.transform;
+            hand.SetPositionAndRotation(body.TransformPoint(_remoteLocal), body.rotation * Quaternion.Euler(0f, _remoteYawSmoothed, 0f));
         }
 
         // ── AĞ ──────────────────────────────────────────────────────────────
@@ -266,16 +317,17 @@ namespace Dishaster
         {
             if (s_instance == null) return;
 
-            // İlk mesajda el beliriyor; o ana kadar kimse görmüyor.
+            // İlk mesajda el beliriyor; o ana kadar kimse görmüyor. Yer, oyuncu bulununca (UpdateRemoteHand).
             if (!s_instance._hasRemoteTarget)
             {
                 s_instance._hasRemoteTarget = true;
-                s_instance.hand.position = message.position;
+                s_instance._remotePlayer = null;
                 s_instance.hand.gameObject.SetActive(true);
             }
 
             s_instance._remoteTarget = message.position;
             s_instance._remoteYaw = message.yaw;
+            s_instance._touching = message.touching;
         }
     }
 }

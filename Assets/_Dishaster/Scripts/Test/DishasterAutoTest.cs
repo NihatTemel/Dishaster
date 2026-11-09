@@ -27,6 +27,7 @@ namespace Dishaster
 
         string _shots;
         bool _mute;
+        bool _deaf;
         bool _observe;
         int _players = 1;
         const float TimeoutSeconds = 150f;
@@ -52,6 +53,7 @@ namespace Dishaster
             {
                 if (args[i] == ShotsFlag) _shots = args[i + 1];
                 if (args[i] == RoleFlag) _mute = args[i + 1] == "mute";
+                if (args[i] == RoleFlag) _deaf = args[i + 1] == "deaf";
                 if (args[i] == RoleFlag) _observe = args[i + 1] == "observe";
                 if (args[i] == PlayersFlag) int.TryParse(args[i + 1], out _players);
             }
@@ -124,7 +126,7 @@ namespace Dishaster
                 yield return null;
             }
 
-            int role = _mute ? MonkeyRoles.Mute : MonkeyRoles.LowVision;
+            int role = _mute ? MonkeyRoles.Mute : _deaf ? MonkeyRoles.Deaf : MonkeyRoles.LowVision;
             room.CmdSelectRole(role);
             while (room.monkeyRole != role) yield return null;
             room.CmdChangeReadyState(true);
@@ -141,6 +143,8 @@ namespace Dishaster
             }
 
             _player = player;
+            _spawnPosition = player.transform.position;
+            _spawnRotation = player.transform.rotation;
 
             yield return new WaitForSeconds(1f);
             KitchenCounter counter = KitchenCounter.Instance;
@@ -152,6 +156,16 @@ namespace Dishaster
             Check(player.GetComponentInChildren<CharacterBody>() != null, "karakter giydirilmedi");
             Check(FindObjectOfType<FirstPersonHands>() != null, "FPS elleri yok");
 
+            // Gözlemci boştaki halini ölçebilsin.
+            if (_players > 1) yield return new WaitForSeconds(5f);
+
+            if (_deaf)
+            {
+                IEnumerator deafRun = RunIdle(player, "deaf");
+                while (deafRun.MoveNext()) yield return deafRun.Current;
+                yield break;
+            }
+
             if (_mute)
             {
                 IEnumerator notebookRun = RunNotebook(player);
@@ -160,6 +174,7 @@ namespace Dishaster
             }
 
             yield return Shot("blind_fp_idle");
+            yield return Third("blind_3p_idle", player, false);
 
             // Buzdolabı kapağı.
             KitchenDoor door = FindObjectOfType<KitchenDoor>();
@@ -182,6 +197,11 @@ namespace Dishaster
             counter.RequestGrabOrDrop(board);
             yield return Wait();
             Check(counter.Held == null, "çilek tahtaya bırakılamadı");
+
+            // Boş el tahtaya dokunuyor: dışarıdan da el tahtada (gövde eğilerek yetişiyor).
+            yield return new WaitForSeconds(0.6f);
+            yield return Shot("blind_fp_touch");
+            yield return Third("blind_3p_touch", player, true);
 
             // Bıçakla doğra.
             KitchenItem knife = counter.Items.First(item => item != null && item.kind == KitchenItemKind.Knife);
@@ -213,6 +233,20 @@ namespace Dishaster
             if (cup == null || bowl == null || carton == null) yield break;
 
             yield return Grab(counter, carton.Item);
+
+            // Bir yere değmeden taşıyor: el ve kutu göğüs önünde (ekranın sağ altında), dışarıdan da öyle.
+            // Açıkta (doğduğu yerde), önünde bir şey yokken.
+            CharacterController carrier = player.GetComponent<CharacterController>();
+            carrier.enabled = false;
+            player.transform.SetPositionAndRotation(_spawnPosition, _spawnRotation);
+            carrier.enabled = true;
+            player.FaceTowards(player.headPivot.position + _spawnRotation * Vector3.forward * 3f);
+            yield return new WaitForSeconds(0.6f);
+            Check(!LowVisionRole.Touching, "düz bakarken el bir yere değiyor sayıldı");
+            yield return Shot("blind_fp_carry");
+            yield return Third("blind_3p_carry", player, false);
+            yield return Third("blind_3p_carry_side", player, true);
+
             yield return Pour(counter, cup, () => cup.AmountOf(Ingredient.Milk) >= milk * 0.5f);
             yield return Shot("blind_fp_pour");
             yield return Third("blind_3p_pour", player, false);
@@ -357,6 +391,56 @@ namespace Dishaster
             if (skin != null) Log($"[{label}] FP renderer enabled {skin.enabled} bounds {Local(skin.bounds.center)} size {skin.bounds.size.ToString("F2")} layer {skin.gameObject.layer}");
         }
 
+        // ── Boşta (Duymadım): eller köşede, kıpırdamıyor ─────────────────────
+
+        IEnumerator RunIdle(DishasterPlayer player, string label)
+        {
+            yield return new WaitForSeconds(1f);
+            yield return Shot(label + "_fp_idle");
+            yield return Third(label + "_3p_idle", player, false);
+
+            // FPS elleri kameraya göre yerinde durmalı (dönmüyor, kaymıyor) ve sağ el sağda, sol el solda.
+            FirstPersonHands hands = FindObjectOfType<FirstPersonHands>();
+            Transform view = player.playerCamera.transform;
+            Transform leftWrist = CharacterBody.FindBone(hands.transform, "LeftHand");
+            Transform rightWrist = CharacterBody.FindBone(hands.transform, "RightHand");
+            var left = new List<Vector3>();
+            var right = new List<Vector3>();
+            float until = Time.time + 2f;
+            while (Time.time < until)
+            {
+                left.Add(view.InverseTransformPoint(leftWrist.position));
+                right.Add(view.InverseTransformPoint(rightWrist.position));
+                yield return null;
+            }
+
+            float spreadL = Spread(left);
+            float spreadR = Spread(right);
+            Log($"[{label}] FPS bilekleri: sol {left[left.Count - 1].ToString("F2")} sağ {right[right.Count - 1].ToString("F2")}, oynama sol {spreadL * 100f:0.0} cm sağ {spreadR * 100f:0.0} cm");
+            Check(spreadL < 0.01f && spreadR < 0.01f, "boştaki FPS elleri kıpırdıyor");
+            Check(left[0].x < -0.05f && right[0].x > 0.05f, "boştaki FPS elleri yanlış tarafta");
+
+            // Aşağı bakınca da eller yerinde.
+            player.FaceTowards(view.position + player.transform.forward * 1f + Vector3.down * 1.2f);
+            yield return new WaitForSeconds(0.5f);
+            yield return Shot(label + "_fp_down");
+            Finish(_failures.Count == 0 && _errors.Count == 0, null);
+        }
+
+        /// <summary>Noktaların ortalamadan en uzak sapması.</summary>
+        static float Spread(List<Vector3> points)
+        {
+            if (points.Count == 0) return 0f;
+
+            Vector3 mean = Vector3.zero;
+            foreach (Vector3 point in points) mean += point;
+            mean /= points.Count;
+
+            float spread = 0f;
+            foreach (Vector3 point in points) spread = Mathf.Max(spread, Vector3.Distance(point, mean));
+            return spread;
+        }
+
         // ── Gözlemci ─────────────────────────────────────────────────────────
 
         IEnumerator RunObserver(DishasterNetworkManager manager)
@@ -371,10 +455,18 @@ namespace Dishaster
                 yield return null;
             }
 
-            room.CmdSelectRole(MonkeyRoles.Deaf);
-            while (room.monkeyRole != MonkeyRoles.Deaf) yield return null;
+            // Boştaki ilk rol (host hangisini seçtiyse o hariç).
+            int[] roles = { MonkeyRoles.Deaf, MonkeyRoles.Mute, MonkeyRoles.LowVision };
+            foreach (int role in roles)
+            {
+                room.CmdSelectRole(role);
+                float wait = Time.time + 1f;
+                while (room.monkeyRole != role && Time.time < wait) yield return null;
+                if (room.monkeyRole == role) break;
+            }
+
             room.CmdChangeReadyState(true);
-            Log("gözlemci hazır");
+            Log("gözlemci hazır (" + MonkeyRoles.NameOf(room.monkeyRole) + ")");
 
             DishasterPlayer local = null;
             while (local == null)
@@ -387,16 +479,72 @@ namespace Dishaster
             local.GetComponent<CharacterController>().enabled = false;
             local.transform.position = new Vector3(0f, -10f, 0f);
 
-            for (int shot = 0; shot < 18; shot++)
+            // Diğer oyuncu giydirilince: boştayken kolları yerinde mi (eskiden defter/eşya avuca oturtulup hedef
+            // oradan okununca el kendini kovalıyor, kol pervane gibi dönüyordu).
+            DishasterPlayer watched = null;
+            CharacterBody watchedBody = null;
+            while (watchedBody == null)
             {
-                yield return new WaitForSeconds(2.5f);
-
-                DishasterPlayer other = null;
                 foreach (NetworkIdentity identity in NetworkClient.spawned.Values)
                     if (identity != null && identity.TryGetComponent(out DishasterPlayer player) && !player.isLocalPlayer)
-                        other = player;
+                        watched = player;
 
-                if (other == null) continue;
+                if (watched != null) watchedBody = watched.GetComponentInChildren<CharacterBody>();
+                yield return null;
+            }
+
+            yield return new WaitForSeconds(1f);
+            Animator animator = watchedBody.GetComponent<Animator>();
+            Transform leftHand = animator.GetBoneTransform(HumanBodyBones.LeftHand);
+            Transform rightHand = animator.GetBoneTransform(HumanBodyBones.RightHand);
+            var lefts = new List<Vector3>();
+            var rights = new List<Vector3>();
+            float measureUntil = Time.time + 3f;
+            while (Time.time < measureUntil)
+            {
+                lefts.Add(watchedBody.transform.InverseTransformPoint(leftHand.position));
+                rights.Add(watchedBody.transform.InverseTransformPoint(rightHand.position));
+                yield return null;
+            }
+
+            float armL = Spread(lefts);
+            float armR = Spread(rights);
+            Log($"[gözlem] {MonkeyRoles.NameOf(watched.role)} boşta kol oynaması: sol {armL * 100f:0.0} cm, sağ {armR * 100f:0.0} cm; sol bilek {lefts[0].ToString("F2")}, sağ bilek {rights[0].ToString("F2")}");
+            Check(armL < 0.03f && armR < 0.03f, MonkeyRoles.NameOf(watched.role) + " boştayken kolu oynuyor");
+
+            float snapMax = 0f;
+            float snapSum = 0f;
+            int snapCount = 0;
+            var snaps = new List<float>();
+
+            for (int shot = 0; shot < 18; shot++)
+            {
+                // Arada: eşya/defter elde tutulurken IK'nın avuca ne kadar uzak kaldığı (iki taraf eşleşiyor mu).
+                float next = Time.time + 2.5f;
+                while (Time.time < next)
+                {
+                    if (watchedBody != null && watchedBody.LastSnapDistance > 0f)
+                    {
+                        snapMax = Mathf.Max(snapMax, watchedBody.LastSnapDistance);
+                        snapSum += watchedBody.LastSnapDistance;
+                        snapCount++;
+                        snaps.Add(watchedBody.LastSnapDistance);
+
+                        // Avuç hedefinden uzak kaldıysa neden: eğilme, ağırlık, hedef ve avuç (karakterin uzayında).
+                        if (watchedBody.LastSnapDistance > 0.08f && Time.time >= _nextSnapLog)
+                        {
+                            _nextSnapLog = Time.time + 0.4f;
+                            NotebookRole book = NotebookRole.Instance;
+                            string pose = book != null && book.Owner == watched ? (book.IsDrawing ? "çizim" : "defter") : "eşya";
+                            Log($"[gözlem] avuç farkı {watchedBody.LastSnapDistance * 100f:0} cm ({pose}, hız {watched.GetComponent<CharacterController>().velocity.magnitude:0.0}): {watchedBody.Describe()}");
+                        }
+                    }
+
+                    yield return null;
+                }
+
+                DishasterPlayer other = watched;
+                if (other == null) break;
 
                 var cameraObject = new GameObject("ObserverCamera");
                 var view = cameraObject.AddComponent<Camera>();
@@ -415,6 +563,11 @@ namespace Dishaster
                 Destroy(cameraObject);
             }
 
+            snaps.Sort();
+            float p95 = snaps.Count > 0 ? snaps[Mathf.Min(snaps.Count - 1, (int)(snaps.Count * 0.95f))] : 0f;
+            float mean = snapCount > 0 ? snapSum / snapCount : 0f;
+            Log($"[gözlem] elde tutarken avuç farkı: ortalama {mean * 100f:0.0} cm, %95 {p95 * 100f:0.0} cm, en çok {snapMax * 100f:0.0} cm ({snapCount} kare)");
+            Check(mean < 0.05f && p95 < 0.12f, "uzaktan eşya/defter ele yetişmiyor (iki taraf eşleşmiyor)");
             Finish(_failures.Count == 0 && _errors.Count == 0, null);
         }
 
@@ -465,6 +618,7 @@ namespace Dishaster
         }
 
         readonly List<string> _failures = new List<string>();
+        float _nextSnapLog;
 
         void Check(bool condition, string message)
         {
@@ -481,6 +635,8 @@ namespace Dishaster
         }
 
         DishasterPlayer _player;
+        Vector3 _spawnPosition;
+        Quaternion _spawnRotation;
 
         /// <summary>Oyuncuyu hedefin önüne koyup ona baktırıyor: el (bakış ışını) gerçekten oraya gidiyor.</summary>
         IEnumerator Approach(Vector3 point)
