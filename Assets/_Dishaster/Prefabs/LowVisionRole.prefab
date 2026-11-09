@@ -555,7 +555,7 @@ MonoBehaviour:
   outlineMaskShader: {fileID: 4800000, guid: 3a49a92d988750048b37c5b440b19d63, type: 3}
   hand: {fileID: 2888597771045747388}
   boardBarrier: {fileID: 1437957100947645749}
-  reach: 1.7
+  reach: 1.45
   restDistance: 0.55
   touchRadius: 0.18
   touchMemorySeconds: 1

@@ -41,7 +41,7 @@ namespace Dishaster
         public Collider boardBarrier;
 
         [Header("El (metre)")]
-        public float reach = 1.7f;
+        public float reach = 1.45f;
         public float restDistance = 0.55f;
 
         [Header("Dokunma")]

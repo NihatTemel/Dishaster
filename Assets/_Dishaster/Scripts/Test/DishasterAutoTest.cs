@@ -21,8 +21,14 @@ namespace Dishaster
         // "-dishasterShots <klasör>": önemli anlarda ekran görüntüsü (birinci ve üçüncü şahıs).
         const string ShotsFlag = "-dishasterShots";
 
+        // "-dishasterPlayers 2": host ikinci oyuncuyu bekliyor; "-dishasterRole observe": local'e katılan gözlemci
+        // (Duymadım), diğer oyuncuyu önden periyodik fotoğraflıyor (uzaktan nasıl göründüğü).
+        const string PlayersFlag = "-dishasterPlayers";
+
         string _shots;
         bool _mute;
+        bool _observe;
+        int _players = 1;
         const float TimeoutSeconds = 150f;
 
         readonly List<string> _errors = new List<string>();
@@ -46,6 +52,8 @@ namespace Dishaster
             {
                 if (args[i] == ShotsFlag) _shots = args[i + 1];
                 if (args[i] == RoleFlag) _mute = args[i + 1] == "mute";
+                if (args[i] == RoleFlag) _observe = args[i + 1] == "observe";
+                if (args[i] == PlayersFlag) int.TryParse(args[i + 1], out _players);
             }
 
             if (_shots != null) System.IO.Directory.CreateDirectory(_shots);
@@ -98,7 +106,14 @@ namespace Dishaster
             // ── Lobi ─────────────────────────────────────────────────────────
             while (DishasterNetworkManager.Instance == null) yield return null;
             DishasterNetworkManager manager = DishasterNetworkManager.Instance;
-            manager.minPlayers = 1;
+            if (_observe)
+            {
+                IEnumerator observe = RunObserver(manager);
+                while (observe.MoveNext()) yield return observe.Current;
+                yield break;
+            }
+
+            manager.minPlayers = Mathf.Max(1, _players);
             manager.HostLocal();
             Log("host açıldı");
 
@@ -113,7 +128,7 @@ namespace Dishaster
             room.CmdSelectRole(role);
             while (room.monkeyRole != role) yield return null;
             room.CmdChangeReadyState(true);
-            while (!manager.allPlayersReady) yield return null;
+            while (!manager.allPlayersReady || manager.roomSlots.Count < _players) yield return null;
             manager.StartGame();
             Log("oyun başlatıldı (" + MonkeyRoles.NameOf(role) + ")");
 
@@ -231,6 +246,36 @@ namespace Dishaster
             Check(!recipe.Failed, "tarif bozuldu: " + recipe.FailReason);
             Check(recipe.Completed, "tarif tamamlanmadı");
 
+            // Art yiyeceği: domatesi al, tahtaya koy, bıçakla sonuna kadar doğra; her kesimde bir dilim çıkmalı.
+            KitchenItem tomato = counter.Items.FirstOrDefault(item => item != null && item.gameObject.activeSelf
+                && item.slicePrefabs != null && item.slicePrefabs.Length > 0 && item.name.Contains("Tomato"));
+            Check(tomato != null, "art domatesi (alınır/kesilir) bulunamadı");
+            if (tomato != null)
+            {
+                int pieces = tomato.segments.Length;
+                yield return Grab(counter, tomato);
+                Vector3 spot = counter.cuttingBoard.position + Vector3.up * 0.03f;
+                yield return Approach(spot);
+                counter.RequestGrabOrDrop(spot);
+                yield return Wait();
+                yield return Grab(counter, knife);
+                yield return Approach(tomato.transform.position);
+                for (int i = 0; i < pieces + 1; i++)
+                {
+                    if (!tomato.gameObject.activeSelf) break;
+                    counter.RequestCut(tomato.transform.position);
+                    yield return new WaitForSeconds(0.35f);
+                    if (i == 1) yield return Shot("blind_fp_tomato");
+                }
+
+                int slicesOut = counter.Items.Count(item => item != null && item.gameObject.activeSelf && item.Ingredient != null
+                    && item.Ingredient.ingredient == Ingredient.Tomato);
+                Log($"domates: {pieces} parça, {slicesOut} dilim çıktı");
+                Check(!tomato.gameObject.activeSelf, "domates sonuna kadar kesilemedi");
+                Check(slicesOut == pieces, $"domates dilim sayısı {slicesOut} (beklenen {pieces})");
+                yield return Drop(counter, new Vector3(0.65f, 0f, 0.25f));
+            }
+
             // Biraz daha oynat: efektler, karakterler, eller hata vermesin.
             yield return new WaitForSeconds(0.3f);
             yield return Shot("blind_fp_done");
@@ -310,6 +355,67 @@ namespace Dishaster
             if (pencil != null) Log($"[{label}] pencil {Local(pencil.position)} active {pencil.gameObject.activeInHierarchy} rendered {pencil.GetComponent<Renderer>().enabled}");
             Renderer skin = hands != null ? hands.GetComponentInChildren<SkinnedMeshRenderer>() : null;
             if (skin != null) Log($"[{label}] FP renderer enabled {skin.enabled} bounds {Local(skin.bounds.center)} size {skin.bounds.size.ToString("F2")} layer {skin.gameObject.layer}");
+        }
+
+        // ── Gözlemci ─────────────────────────────────────────────────────────
+
+        IEnumerator RunObserver(DishasterNetworkManager manager)
+        {
+            yield return new WaitForSeconds(2f);
+            manager.JoinLocal();
+
+            DishasterRoomPlayer room = null;
+            while (room == null)
+            {
+                if (NetworkClient.localPlayer != null) NetworkClient.localPlayer.TryGetComponent(out room);
+                yield return null;
+            }
+
+            room.CmdSelectRole(MonkeyRoles.Deaf);
+            while (room.monkeyRole != MonkeyRoles.Deaf) yield return null;
+            room.CmdChangeReadyState(true);
+            Log("gözlemci hazır");
+
+            DishasterPlayer local = null;
+            while (local == null)
+            {
+                if (NetworkClient.localPlayer != null) NetworkClient.localPlayer.TryGetComponent(out local);
+                yield return null;
+            }
+
+            // Hareket etmesin, kimseyi engellemesin.
+            local.GetComponent<CharacterController>().enabled = false;
+            local.transform.position = new Vector3(0f, -10f, 0f);
+
+            for (int shot = 0; shot < 18; shot++)
+            {
+                yield return new WaitForSeconds(2.5f);
+
+                DishasterPlayer other = null;
+                foreach (NetworkIdentity identity in NetworkClient.spawned.Values)
+                    if (identity != null && identity.TryGetComponent(out DishasterPlayer player) && !player.isLocalPlayer)
+                        other = player;
+
+                if (other == null) continue;
+
+                var cameraObject = new GameObject("ObserverCamera");
+                var view = cameraObject.AddComponent<Camera>();
+                view.depth = 100f;
+                view.fieldOfView = 50f;
+                view.nearClipPlane = 0.05f;
+                Transform root = other.transform;
+                Vector3 side = shot % 2 == 0 ? root.forward : (root.forward + root.right).normalized;
+                cameraObject.transform.position = root.position + side * 2.4f + Vector3.up * 0.55f;
+                cameraObject.transform.LookAt(root.position + Vector3.up * 0.25f);
+
+                yield return null;
+                yield return new WaitForEndOfFrame();
+                if (_shots != null) ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(_shots, $"observe_{shot:00}.png"));
+                yield return null;
+                Destroy(cameraObject);
+            }
+
+            Finish(_failures.Count == 0 && _errors.Count == 0, null);
         }
 
         // ── Ekran görüntüleri ────────────────────────────────────────────────

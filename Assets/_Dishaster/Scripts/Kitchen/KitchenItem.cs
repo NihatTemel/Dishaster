@@ -34,6 +34,13 @@ namespace Dishaster
         [Tooltip("Parça başına dilimin ölçeği: uçlardan küçük dilim çıkıyor.")]
         public float[] sliceScales;
 
+        [Header("Art yiyecekleri (YIYECEKLER.md: Whole / Slices / Slice_NN)")]
+        [Tooltip("Doluysa her kesimde sıradaki dilimin kendi prefab'ı çıkıyor (ölçek yok); slicePrefab yerine.")]
+        public KitchenItem[] slicePrefabs;
+        [Tooltip("Bütün hal: ilk kesimde kapanıp dilimli hali açılıyor.")]
+        public GameObject whole;
+        public GameObject slicesRoot;
+
         BoxCollider _collider;
         int _cuts;
 
@@ -47,7 +54,20 @@ namespace Dishaster
 
         public bool IsCuttable => segments != null && segments.Length > 0;
 
-        public float NextSliceScale => sliceScales[_cuts];
+        public float NextSliceScale => sliceScales != null && _cuts < sliceScales.Length ? sliceScales[_cuts] : 1f;
+
+        /// <summary>Bu kesimde çıkacak dilim ve ölçeği.</summary>
+        public KitchenItem NextSlice(out float scale)
+        {
+            if (slicePrefabs != null && _cuts < slicePrefabs.Length && slicePrefabs[_cuts] != null)
+            {
+                scale = 1f;
+                return slicePrefabs[_cuts];
+            }
+
+            scale = NextSliceScale;
+            return slicePrefab;
+        }
 
         public Vector3 Center => transform.position + Vector3.up * (height / 2f);
 
@@ -67,6 +87,13 @@ namespace Dishaster
         /// <summary>Bir dilim eksiltiyor; son dilim de kesilince eşya kalmıyor.</summary>
         public void CutOnce()
         {
+            // Art yiyeceği: ilk kesimde bütün hal kapanıp dilimli hal açılıyor, sonra dilimler tek tek gidiyor.
+            if (whole != null && whole.activeSelf)
+            {
+                whole.SetActive(false);
+                if (slicesRoot != null) slicesRoot.SetActive(true);
+            }
+
             segments[_cuts].SetActive(false);
             _cuts++;
 

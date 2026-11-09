@@ -14,7 +14,7 @@ namespace Dishaster.EditorTools
     [InitializeOnLoad]
     public static class NotebookInstaller
     {
-        const string Version = "4";
+        const string Version = "6";
         const string VersionFile = "ProjectSettings/DishasterNotebook.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/NotebookRole.prefab";
         const string PageMaterialPath = "Assets/_Dishaster/Materials/M_NotebookPage.mat";
@@ -181,14 +181,15 @@ namespace Dishaster.EditorTools
             Vector3 direction = new Vector3(0.45f, -0.5f, -0.75f).normalized;
             Quaternion along = Quaternion.LookRotation(direction, Vector3.up);
 
-            Material pen = DishasterSceneBuilder.GetMaterial("M_Pen", new Color(0.12f, 0.12f, 0.14f));
+            // Klasik sarı kurşun kalem: elde görünsün.
+            Material pen = DishasterSceneBuilder.GetMaterial("M_Pencil", new Color(0.98f, 0.78f, 0.15f));
             GameObject stick = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             stick.name = "Pencil";
             Object.DestroyImmediate(stick.GetComponent<CapsuleCollider>());
             stick.transform.SetParent(hand.transform, false);
-            stick.transform.localPosition = direction * 0.065f;
+            stick.transform.localPosition = direction * 0.1f;
             stick.transform.localRotation = Quaternion.FromToRotation(Vector3.up, direction);
-            stick.transform.localScale = new Vector3(0.009f, 0.065f, 0.009f);
+            stick.transform.localScale = new Vector3(0.011f, 0.1f, 0.011f);
             stick.GetComponent<Renderer>().sharedMaterial = pen;
 
             // Yumruk kalemi ortasından tutuyor; işaret ve başparmak uca doğru.

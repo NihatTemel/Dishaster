@@ -50,13 +50,16 @@ namespace Dishaster
         public bool IsDrawing => _owner != null && _pose == NotebookPose.Draw;
 
         /// <summary>
-        /// Sol avucun defterdeki yeri: sol kenarın alt kısmı. El defteri yandan kavrıyor; kameradan bakınca defterin
-        /// solunda görünüyor (karakterin eli ve FPS eli buraya).
+        /// Sol avucun yeri: alt kenarın sol çeyreğinin hemen altı. El defteri tablet gibi alttan kavrıyor (avuç yukarı,
+        /// parmaklar kapağın arkasında, başparmak sayfada); defter dönünce el de onunla dönüyor.
         /// </summary>
-        public Vector3 LeftGripPoint => notebook.TransformPoint(new Vector3(-pageSize.x * 0.5f - 0.012f, -pageSize.y * 0.22f, 0.008f));
+        public Vector3 LeftGripPoint => notebook.TransformPoint(new Vector3(-pageSize.x * 0.25f, -pageSize.y * 0.5f - 0.03f, 0.015f));
 
         /// <summary>Kalemi tutan avucun yeri: kalemin ortasından biraz yukarısı.</summary>
-        public Vector3 PenGripPoint => _pencil != null ? _pencil.position + _pencil.up * 0.06f : rightHand.position;
+        public Vector3 PenGripPoint => _pencil != null ? _pencil.position + _pencil.up * 0.035f : rightHand.position;
+
+        /// <summary>Kalemin ucu (sayfaya değen nokta).</summary>
+        public Vector3 PenTip => rightHand.position;
 
         /// <summary>FPS sol elinin, tutma duruşuna göre defterle birlikte dönmesi.</summary>
         public Quaternion LeftHandTurn => _owner != null
@@ -74,7 +77,7 @@ namespace Dishaster
         public Vector2 pageSize = new Vector2(0.5f, 0.25f);
 
         [Header("Duruşlar: sol elin yeri (kafaya göre) ve defterin dönüşü")]
-        public Vector3 holdHand = new Vector3(-0.22f, -0.15f, 0.42f);
+        public Vector3 holdHand = new Vector3(-0.22f, -0.05f, 0.48f);
         public Vector3 holdRotation = new Vector3(40f, 0f, 0f);
         public Vector3 drawHand = new Vector3(-0.25f, 0.03f, 0.42f);
         public Vector3 drawRotation = Vector3.zero;

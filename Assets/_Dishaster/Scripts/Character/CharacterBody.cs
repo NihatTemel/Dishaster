@@ -10,6 +10,8 @@ namespace Dishaster
     /// (KARAKTERLER.md: kapalı ağız MBP=100, MBP+OO+EE en çok 100; Çizer'in ağzı bantlı, hep kapalı).
     /// </summary>
     [RequireComponent(typeof(Animator))]
+    // Mutfak (bıçak inişi, kap eğimi) ve defter yerleştikten sonra: uzaktakilerde eşyayı/defteri gerçek ele oturtuyor.
+    [DefaultExecutionOrder(200)]
     public class CharacterBody : MonoBehaviour
     {
         const string VisemeClosed = "Viseme_MBP";
@@ -177,14 +179,9 @@ namespace Dishaster
 
             if (_player.role == MonkeyRoles.LowVision)
             {
-                // Eşya tutuyorsa avuç eşyada (bıçak inip kalkarken, kap eğilirken el de onunla); değilse dokunduğu yerde.
-                KitchenCounter counter = KitchenCounter.Instance;
-                if (counter != null && counter.TryGetHeldGrip(out Vector3 palm, out _)) right = palm;
-                else
-                {
-                    Transform hand = LowVisionRole.Hand;
-                    if (hand != null && hand.gameObject.activeInHierarchy) right = hand.position;
-                }
+                // El dokunduğu yere uzanıyor; tuttuğu eşya (uzaktakilerde) LateUpdate'te gerçek avuca oturtuluyor.
+                Transform hand = LowVisionRole.Hand;
+                if (hand != null && hand.gameObject.activeInHierarchy) right = hand.position;
             }
         }
 
@@ -193,8 +190,45 @@ namespace Dishaster
         // LateUpdate: Animator kapakları ve ağzı ezmesin.
         float FootY(Transform foot) => transform.InverseTransformPoint(foot.position).y;
 
+        /// <summary>İnsan iskeletinde avucun ortası (bilek ile orta parmak kökü arası).</summary>
+        Vector3? Palm(bool left)
+        {
+            Transform wrist = _animator.GetBoneTransform(left ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand);
+            Transform knuckle = _animator.GetBoneTransform(left ? HumanBodyBones.LeftMiddleProximal : HumanBodyBones.RightMiddleProximal);
+            if (wrist == null) return null;
+            return knuckle != null ? (wrist.position + knuckle.position) * 0.5f : wrist.position;
+        }
+
+        /// <summary>
+        /// Uzaktaki oyuncunun elinde duran şey gerçekten elinde görünsün: IK kol boyunu aşan hedefe tam yetişemiyor,
+        /// eşya/defter havada kalıyordu. Kol yerleştikten sonra eşya (eğimi ve bıçak inişiyle) avuca, defter sol avuca
+        /// taşınıyor. Sadece görüntü; kendi ekranında FPS elleri var, orada dokunulmuyor.
+        /// </summary>
+        void AttachHeldToHands()
+        {
+            if (_player.isLocalPlayer) return;
+
+            NotebookRole notebook = NotebookRole.Instance;
+            if (notebook != null && notebook.Owner == _player)
+            {
+                Vector3? palm = Palm(true);
+                if (palm.HasValue) notebook.notebook.position += palm.Value - notebook.LeftGripPoint;
+                return;
+            }
+
+            if (_player.role != MonkeyRoles.LowVision) return;
+
+            KitchenCounter counter = KitchenCounter.Instance;
+            if (counter == null || counter.Held == null || !counter.TryGetHeldGrip(out Vector3 grip, out _)) return;
+
+            Vector3? hand = Palm(false);
+            if (hand.HasValue) counter.Held.transform.position += hand.Value - grip;
+        }
+
         void LateUpdate()
         {
+            if (_player != null && _animator != null) AttachHeldToHands();
+
             if (_footL != null && _footR != null)
                 _bodyHeight += (_footHeight - Mathf.Min(FootY(_footL), FootY(_footR))) * 0.5f;
 

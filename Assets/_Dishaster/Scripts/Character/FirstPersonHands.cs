@@ -4,29 +4,62 @@ namespace Dishaster
 {
     /// <summary>
     /// Kendi kameranda görünen FPS elleri (art'ın SK_*_FPHands'i, bkz. KARAKTERLER.md). Kameraya (0, -1.60, -0.06)
-    /// ile bağlı; her kare FP_Poses klibinden bir poz alınıyor (8 tutma, 1 açık), sonra el rolün işine taşınıyor:
-    /// ön kol kemiği, avucun ortası hedefe gelecek kadar kaydırılıp gerekirse avucun etrafında döndürülüyor.
-    /// Bilmiyorum: sol el defteri tutuyor, sağ el sadece çizerken kalemde. Görmedim: sağ el dokunduğu yerde, sol el yok.
-    /// Duymadım: iki el boşta. İncelerken eller gizli.
+    /// ile bağlı; her kare FP_Poses klibinden poz alınıyor (8 tutma, 1 açık; iki el ayrı kare alabiliyor), sonra el
+    /// rolün işine taşınıyor. Elin yönü açıkça veriliyor: parmakların gittiği yön ve avucun baktığı yön kemiklerden
+    /// ölçülüp istenene çevriliyor (kemik eksenlerine bağlı değil). Ön kol avucun etrafında dönüp avuç hedefe kayıyor;
+    /// kol (ceket) bilekten omza uzanıp bilek kesiğini örtüyor.
+    /// Bilmiyorum: sol el defteri alttan kavrıyor (çevirirken defterle döner), sağ el sadece çizerken kalemi tutuyor.
+    /// Görmedim: sağ el dokunduğu yerde/eşyayı tutuyor, sol el solda boşta. Duymadım: iki el boşta. İncelerken gizli.
     /// </summary>
     [DefaultExecutionOrder(100)]
     public class FirstPersonHands : MonoBehaviour
     {
         const float FrameRate = 24f;
         public const int FrameOpen = 1;
+        public const int FrameFist = 2;
         public const int FrameGrip = 8;
+
+        // Parmakların kapanma/açılma hızı (saniyede): tutunca ~0.15 sn'de kapanıyor.
+        const float CurlSpeed = 7f;
 
         static readonly Vector3 CameraOffset = new Vector3(0f, -1.60f, -0.06f);
 
-        // Kameraya göre omuzlar: hedefe giden el buradan uzanıyormuş gibi yöneliyor, bilek kapağı ekran dışında kalıyor.
-        static readonly Vector3 LeftShoulder = new Vector3(-0.22f, -0.34f, -0.05f);
-        static readonly Vector3 RightShoulder = new Vector3(0.22f, -0.34f, -0.05f);
+        // Kameraya göre omuzlar: kol buradan bileğe uzanıyor; yön verilmeyen el de buradan hedefe bakıyor.
+        static readonly Vector3 LeftShoulder = new Vector3(-0.34f, -0.44f, -0.08f);
+        static readonly Vector3 RightShoulder = new Vector3(0.34f, -0.44f, -0.08f);
+
+        // Kol: bilekten omza doğru, karakterin ceketinden. Bilek kesiğindeki kapağı kapatıyor, eli gövdeye bağlıyor.
+        const float SleeveLength = 0.36f;
+        const float SleeveRadius = 0.07f;
+        const float SleeveOverlap = 0.045f;
+
+        /// <summary>Elin istenen hali: avucun yeri, parmakların yönü, avucun baktığı yön (yönler boşsa omuzdan bakar).</summary>
+        struct Pose
+        {
+            public bool visible;
+            public bool placed;
+            public Vector3 palm;
+            public Vector3 fingers;
+            public Vector3 palmFacing;
+            // Parmaklar: açık kare ile kapalı kare arasında, curl kadar (0 açık, 1 kapalı).
+            public int closedFrame;
+            public float curl;
+        }
 
         class Hand
         {
+            public bool left;
             public Transform foreArm;
             public Transform wrist;
             public Transform knuckle;
+            public Transform index;
+            public Transform pinky;
+            public Transform[] bones;
+            public Vector3[] bonePositions;
+            public Quaternion[] boneRotations;
+            public Vector3[] openPositions;
+            public Quaternion[] openRotations;
+            public float curl;
             public Vector3 restPosition;
             public Quaternion restRotation;
             public Transform sleeve;
@@ -38,11 +71,6 @@ namespace Dishaster
         AnimationClip _poses;
         Hand _left;
         Hand _right;
-
-        // Kol: bilekten omza doğru, karakterin ceketinden. Bilek kesiğindeki kapağı kapatıyor, eli gövdeye bağlıyor.
-        const float SleeveLength = 0.36f;
-        const float SleeveRadius = 0.056f;
-        const float SleeveOverlap = 0.045f;
 
         public void Setup(DishasterPlayer player, AnimationClip poses, Material sleeve)
         {
@@ -93,71 +121,155 @@ namespace Dishaster
         {
             var hand = new Hand
             {
+                left = side == "Left",
                 foreArm = CharacterBody.FindBone(transform, side + "ForeArm"),
                 wrist = CharacterBody.FindBone(transform, side + "Hand"),
                 knuckle = CharacterBody.FindBone(transform, side + "HandMiddle1"),
+                index = CharacterBody.FindBone(transform, side + "HandIndex1"),
+                pinky = CharacterBody.FindBone(transform, side + "HandPinky1"),
             };
 
-            // Klip ön kolu anahtarlamıyorsa taşıma birikmesin: her kare buradan başlanıyor.
             if (hand.foreArm != null)
             {
+                // Klip ön kolu anahtarlamıyorsa taşıma birikmesin: her kare buradan başlanıyor.
                 hand.restPosition = hand.foreArm.localPosition;
                 hand.restRotation = hand.foreArm.localRotation;
+                hand.bones = hand.foreArm.GetComponentsInChildren<Transform>(true);
+                hand.bonePositions = new Vector3[hand.bones.Length];
+                hand.boneRotations = new Quaternion[hand.bones.Length];
+                hand.openPositions = new Vector3[hand.bones.Length];
+                hand.openRotations = new Quaternion[hand.bones.Length];
             }
 
             return hand;
         }
 
+        // ── KARE ────────────────────────────────────────────────────────────
+
         void LateUpdate()
         {
             if (_player == null || _left.foreArm == null || _right.foreArm == null) return;
 
-            bool hidden = _player.ControlBlocked;
-            int frame = FrameGrip;
-            Vector3? left = null;
-            Vector3? right = null;
-            Quaternion leftTurn = Quaternion.identity;
-            Quaternion rightAfter = Quaternion.identity;
-            bool showLeft = !hidden;
-            bool showRight = !hidden;
+            Transform view = _player.playerCamera.transform;
+            var left = new Pose { visible = true, closedFrame = FrameGrip, curl = 0.45f };
+            var right = new Pose { visible = true, closedFrame = FrameGrip, curl = 0.45f };
 
             NotebookRole notebook = NotebookRole.Instance;
             if (notebook != null && notebook.Owner == _player)
             {
-                left = notebook.LeftGripPoint;
-                leftTurn = notebook.LeftHandTurn;
-                showRight &= notebook.IsDrawing;
-                if (notebook.IsDrawing) right = notebook.PenGripPoint;
+                // Sol el defteri alttan kavrıyor: avuç yukarı (alt kenara), parmaklar kapağın arkasına kapanmış.
+                Transform book = notebook.notebook;
+                left.placed = true;
+                left.palm = notebook.LeftGripPoint;
+                left.fingers = book.forward * 0.75f + book.up * 0.45f;
+                left.palmFacing = book.up;
+                left.curl = 1f;
+
+                // Sağ el sadece çizerken: kalemi yumrukla kavrıyor, parmaklar kalemin ucuna doğru.
+                right.visible = notebook.IsDrawing;
+                if (notebook.IsDrawing)
+                {
+                    right.placed = true;
+                    right.palm = notebook.PenGripPoint;
+                    right.fingers = notebook.PenTip - notebook.PenGripPoint;
+                    right.palmFacing = -book.right;
+                    right.closedFrame = FrameFist;
+                    right.curl = 0.8f;
+                }
             }
             else if (_player.role == MonkeyRoles.LowVision)
             {
-                showLeft = false;
                 KitchenCounter counter = KitchenCounter.Instance;
+                right.placed = true;
 
-                // Eşya tutuyorsa avuç eşyada: bıçak inip kalkarken, kap dökerken eğilirken el de onunla.
-                if (counter != null && counter.TryGetHeldGrip(out Vector3 palm, out Quaternion itemTurn))
+                if (counter != null && counter.Held != null)
                 {
-                    // Avuç eşyayı izliyor; elin yönü omuzdan geliyor (eğimi ele de verince bilek kapağı kolla
-                    // hizasız kalıyordu). Karakterin kendi eli (IK) eğimle birlikte gidiyor.
-                    right = palm;
-                    frame = FrameGrip;
+                    Grip(counter.Held, ref right);
                 }
                 else
                 {
+                    // Açık el, el sırtı yukarıda, dokunduğu yere uzanıyor: parmaklar açılıyor.
                     Transform reach = LowVisionRole.Hand;
-                    if (reach != null) right = reach.position;
-                    frame = FrameOpen;
+                    right.palm = reach != null ? reach.position : view.TransformPoint(new Vector3(0.15f, -0.25f, 0.45f));
+                    right.fingers = view.forward - view.up * 0.35f;
+                    right.palmFacing = -view.up;
+                    right.curl = 0f;
                 }
             }
 
-            // Klip kemikleri kameraya göre pozluyor; taşıma bunun üstüne.
+            if (_player.ControlBlocked)
+            {
+                left.visible = false;
+                right.visible = false;
+            }
+
+            // Parmaklar yumuşakça kapanıp açılıyor.
+            float step = CurlSpeed * Time.deltaTime;
+            _left.curl = Mathf.MoveTowards(_left.curl, left.curl, step);
+            _right.curl = Mathf.MoveTowards(_right.curl, right.curl, step);
+
+            // Her el: açık kareyi ve kendi kapalı karesini örnekle, kemik kemik curl kadar karıştır.
             Reset(_left);
             Reset(_right);
-            _poses.SampleAnimation(gameObject, frame / FrameRate);
+            _poses.SampleAnimation(gameObject, FrameOpen / FrameRate);
+            SaveOpen(_left);
+            SaveOpen(_right);
 
-            Transform view = _player.playerCamera.transform;
-            Place(_left, showLeft, left, leftTurn, view.TransformPoint(LeftShoulder), Quaternion.identity);
-            Place(_right, showRight, right, Quaternion.identity, view.TransformPoint(RightShoulder), rightAfter);
+            _poses.SampleAnimation(gameObject, right.closedFrame / FrameRate);
+            Blend(_right);
+            Save(_right);
+
+            if (left.closedFrame != right.closedFrame) _poses.SampleAnimation(gameObject, left.closedFrame / FrameRate);
+            Restore(_right);
+            Blend(_left);
+
+            Place(_left, left, view.TransformPoint(LeftShoulder));
+            Place(_right, right, view.TransformPoint(RightShoulder));
+        }
+
+        /// <summary>
+        /// Tutulan eşyaya göre kavrayış: bıçak sapından yumrukla (bıçak ileri, parmaklar sapın etrafında),
+        /// kap/kutu yandan sarılarak, küçük şeyler (dilim, yumurta, meyve) üstten tutularak. Eşya eğilirse el de.
+        /// </summary>
+        static void Grip(KitchenItem item, ref Pose pose)
+        {
+            Transform t = item.transform;
+            if (item.kind == KitchenItemKind.Knife)
+            {
+                Transform handle = t.Find("Handle");
+                pose.palm = handle != null ? handle.position : t.TransformPoint(new Vector3(0f, 0.015f, -0.08f));
+                pose.fingers = t.forward * 0.45f - t.up * 0.9f;
+                pose.palmFacing = -t.right;
+                pose.closedFrame = FrameFist;
+                pose.curl = 1f;
+                return;
+            }
+
+            Bounds bounds = LocalBounds(item);
+            if (item.Container != null)
+            {
+                // Yandan sarıyor: avuç kabın sağ yüzüne, parmaklar ileri.
+                Vector3 side = new Vector3(bounds.max.x + 0.012f, bounds.center.y, bounds.center.z);
+                pose.palm = t.TransformPoint(side);
+                pose.fingers = t.forward;
+                pose.palmFacing = -t.right;
+                pose.closedFrame = FrameGrip;
+                pose.curl = 0.85f;
+                return;
+            }
+
+            // Küçük şey: avuç aşağı, üstünden kavrıyor.
+            pose.palm = t.TransformPoint(new Vector3(bounds.center.x, bounds.max.y + 0.025f, bounds.center.z));
+            pose.fingers = t.forward;
+            pose.palmFacing = -t.up;
+            pose.closedFrame = FrameGrip;
+            pose.curl = 0.6f;
+        }
+
+        /// <summary>Eşyanın kendi eksenlerinde kutusu (tetik collider'ı ondan kuruluyor).</summary>
+        static Bounds LocalBounds(KitchenItem item)
+        {
+            return item.TryGetComponent(out BoxCollider box) ? new Bounds(box.center, box.size) : new Bounds(Vector3.up * item.height / 2f, new Vector3(0.06f, item.height, 0.06f));
         }
 
         static void Reset(Hand hand)
@@ -166,37 +278,90 @@ namespace Dishaster
             hand.foreArm.localRotation = hand.restRotation;
         }
 
-        static void Place(Hand hand, bool visible, Vector3? target, Quaternion turn, Vector3 shoulder, Quaternion after)
+        static void Save(Hand hand)
+        {
+            for (int i = 0; i < hand.bones.Length; i++)
+            {
+                hand.bonePositions[i] = hand.bones[i].localPosition;
+                hand.boneRotations[i] = hand.bones[i].localRotation;
+            }
+        }
+
+        static void SaveOpen(Hand hand)
+        {
+            for (int i = 0; i < hand.bones.Length; i++)
+            {
+                hand.openPositions[i] = hand.bones[i].localPosition;
+                hand.openRotations[i] = hand.bones[i].localRotation;
+            }
+        }
+
+        /// <summary>Şimdiki (kapalı) poz ile kayıtlı açık poz arasında, elin curl'ü kadar (kemik kemik).</summary>
+        static void Blend(Hand hand)
+        {
+            for (int i = 0; i < hand.bones.Length; i++)
+            {
+                Transform bone = hand.bones[i];
+                bone.SetLocalPositionAndRotation(
+                    Vector3.Lerp(hand.openPositions[i], bone.localPosition, hand.curl),
+                    Quaternion.Slerp(hand.openRotations[i], bone.localRotation, hand.curl));
+            }
+        }
+
+        static void Restore(Hand hand)
+        {
+            for (int i = 0; i < hand.bones.Length; i++)
+                hand.bones[i].SetLocalPositionAndRotation(hand.bonePositions[i], hand.boneRotations[i]);
+        }
+
+        static void Place(Hand hand, Pose pose, Vector3 shoulder)
         {
             // Gizlemek: ön kol (ve altındaki el) sıfıra ölçekleniyor.
-            hand.foreArm.localScale = visible ? Vector3.one : Vector3.zero;
-            if (hand.sleeve != null) hand.sleeve.gameObject.SetActive(visible);
-            if (!visible) return;
-            if (!target.HasValue)
+            hand.foreArm.localScale = pose.visible ? Vector3.one : Vector3.zero;
+            if (hand.sleeve != null) hand.sleeve.gameObject.SetActive(pose.visible);
+            if (!pose.visible) return;
+
+            if (pose.placed)
             {
-                PlaceSleeve(hand, shoulder);
-                return;
+                Vector3 palm = hand.Palm;
+                Quaternion turn = pose.fingers.sqrMagnitude > 1e-6f && pose.palmFacing.sqrMagnitude > 1e-6f
+                    ? Orient(hand, pose.fingers, pose.palmFacing)
+                    : Aim(hand, pose.palm - shoulder);
+
+                // Avucun etrafında dön, sonra avucu hedefe taşı.
+                Transform foreArm = hand.foreArm;
+                foreArm.SetPositionAndRotation(palm + turn * (foreArm.position - palm), turn * foreArm.rotation);
+                foreArm.position += pose.palm - palm;
             }
 
-            Vector3 palm = hand.Palm;
-            Transform foreArm = hand.foreArm;
-
-            // Bilekten parmaklara doğru eksen, omuzdan hedefe bakacak şekilde çevriliyor (defterin dönüşü üstüne).
-            if (hand.knuckle != null)
-            {
-                Vector3 along = turn * (hand.knuckle.position - hand.wrist.position);
-                Vector3 reach = target.Value - shoulder;
-                if (along.sqrMagnitude > 1e-6f && reach.sqrMagnitude > 1e-6f)
-                    turn = Quaternion.FromToRotation(along, reach) * turn;
-            }
-
-            // Eşyanın kendi hareketi (eğilme) en son: el eşyayla birlikte dönüyor.
-            turn = after * turn;
-
-            // Avucun etrafında dön, sonra avucu hedefe taşı.
-            foreArm.SetPositionAndRotation(palm + turn * (foreArm.position - palm), turn * foreArm.rotation);
-            foreArm.position += target.Value - palm;
             PlaceSleeve(hand, shoulder);
+        }
+
+        /// <summary>
+        /// Şimdiki parmak ve avuç yönünü (kemiklerden) istenene çeviren dönüş. Avucun baktığı yön: işaret→serçe
+        /// ekseni ile parmak yönünün çarpımı (sol elde ters), yani kemik eksenlerinden bağımsız.
+        /// </summary>
+        static Quaternion Orient(Hand hand, Vector3 fingers, Vector3 palmFacing)
+        {
+            if (hand.knuckle == null || hand.index == null || hand.pinky == null) return Quaternion.identity;
+
+            Vector3 currentFingers = hand.knuckle.position - hand.wrist.position;
+            Vector3 thumbSide = hand.index.position - hand.pinky.position;
+            Vector3 currentPalm = Vector3.Cross(currentFingers, thumbSide);
+            if (hand.left) currentPalm = -currentPalm;
+            if (currentFingers.sqrMagnitude < 1e-8f || currentPalm.sqrMagnitude < 1e-8f) return Quaternion.identity;
+
+            Quaternion now = Quaternion.LookRotation(currentFingers, currentPalm);
+            Quaternion wanted = Quaternion.LookRotation(fingers, palmFacing);
+            return wanted * Quaternion.Inverse(now);
+        }
+
+        static Quaternion Aim(Hand hand, Vector3 reach)
+        {
+            if (hand.knuckle == null) return Quaternion.identity;
+
+            Vector3 along = hand.knuckle.position - hand.wrist.position;
+            return along.sqrMagnitude > 1e-6f && reach.sqrMagnitude > 1e-6f ? Quaternion.FromToRotation(along, reach) : Quaternion.identity;
         }
 
         /// <summary>Kol, bilekten omza doğru uzanıyor (ekranın dışına); bileğe biraz biniyor ki kapak görünmesin.</summary>
@@ -207,6 +372,7 @@ namespace Dishaster
             Vector3 along = hand.wrist.position - shoulder;
             if (along.sqrMagnitude < 1e-6f) return;
             along.Normalize();
+
             hand.sleeve.SetPositionAndRotation(
                 hand.wrist.position - along * (SleeveLength / 2f - SleeveOverlap),
                 Quaternion.FromToRotation(Vector3.up, along));

@@ -551,9 +551,9 @@ namespace Dishaster
                     break;
 
                 case KitchenEventType.Cut:
-                    KitchenItem slice = Instantiate(item.slicePrefab, transform);
+                    KitchenItem slice = Instantiate(item.NextSlice(out float sliceScale), transform);
                     slice.transform.position = message.position;
-                    slice.transform.localScale = new Vector3(item.NextSliceScale, 1f, item.NextSliceScale);
+                    slice.transform.localScale = new Vector3(sliceScale, 1f, sliceScale);
                     Register(slice);
                     item.CutOnce();
                     if (slice.TryGetComponent(out KitchenIngredientItem sliceIngredient)) _recipe.NoteSlice(sliceIngredient.ingredient);

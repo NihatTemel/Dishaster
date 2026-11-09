@@ -196,6 +196,11 @@ namespace Dishaster
         /// <summary>Kesilen ürünün iç rengi: dilimin malzemesinden (yoksa kırmızımsı).</summary>
         static Color ColorOf(KitchenItem item)
         {
+            // Art yiyeceği: malzemenin rengi.
+            if (item != null && item.slicePrefabs != null && item.slicePrefabs.Length > 0 && item.slicePrefabs[0] != null
+                && item.slicePrefabs[0].TryGetComponent(out KitchenIngredientItem art))
+                return Ingredients.ColorOf(art.ingredient);
+
             if (item != null && item.slicePrefab != null)
             {
                 Renderer renderer = item.slicePrefab.GetComponentInChildren<Renderer>();
