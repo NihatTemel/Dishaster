@@ -2,20 +2,20 @@
 
 Bu klasör art tarafının (Özgür) teslim ettiği kesilebilir yiyecekleri içerir. Bu dosya kod yazan kişi ve onun yapay zeka asistanı için hazırlandı.
 
-Son güncelleme: 7 Kasım 2026. `Test` alt klasörü eski denemedir, bu sisteme dahil değildir.
+Son güncelleme: 9 Kasım 2026 (ölçüler Aşçı'nın eline göre büyütüldü). `Test` alt klasörü eski denemedir, bu sisteme dahil değildir.
 
 ## Yiyecekler
 
 | Prefab | FBX | Dilim | Boy (cm) |
 | --- | --- | --- | --- |
-| `PF_Mushroom_01` | `SM_Mushroom_01.fbx` | 5 (boyuna) | 10 × 10 × 9,7 |
-| `PF_Onion_01` | `SM_Onion_01.fbx` | 5 | 9 × 9 × 12,8 |
-| `PF_Strawberry_01` | `SM_Strawberry_01.fbx` | 5 | 5,8 × 5,9 × 8,2 |
-| `PF_Carrot_01` | `SM_Carrot_01.fbx` | 5 | 9 × 9 × 28,6 |
-| `PF_Pepper_01` | `SM_Pepper_01.fbx` | 5 (içi boş halka) | 11 × 11,8 × 16,4 |
+| `PF_Mushroom_01` | `SM_Mushroom_01.fbx` | 5 (boyuna) | 12 × 12 × 11,7 |
+| `PF_Onion_01` | `SM_Onion_01.fbx` | 5 | 11,9 × 11,9 × 16,6 |
+| `PF_Strawberry_01` | `SM_Strawberry_01.fbx` | 5 | 7,6 × 7,6 × 10,7 |
+| `PF_Carrot_01` | `SM_Carrot_01.fbx` | 5 | 10,1 × 10,2 × 31,5 |
+| `PF_Pepper_01` | `SM_Pepper_01.fbx` | 5 (içi boş halka) | 12,1 × 13 × 18 |
 | `PF_Tomato_01` | `SM_Tomato_01.fbx` | 5 | 12,9 × 12,3 × 13,9 |
-| `PF_Bread_Loaf_01` | `SM_Bread_Loaf_01.fbx` | 10 (uçlar da dilim) | 16 × 25 × 16,5 |
-| `PF_Cheese_Block_01` | `SM_Cheese_Block_01.fbx` | 10 | 8,5 × 12,4 × 6 |
+| `PF_Bread_Loaf_01` | `SM_Bread_Loaf_01.fbx` | 10 (uçlar da dilim) | 17,8 × 27,1 × 18,2 |
+| `PF_Cheese_Block_01` | `SM_Cheese_Block_01.fbx` | 10 | 11,9 × 17,4 × 8,4 |
 
 ## Dosyalar
 
