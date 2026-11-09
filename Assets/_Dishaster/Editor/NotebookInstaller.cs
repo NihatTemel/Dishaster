@@ -14,7 +14,7 @@ namespace Dishaster.EditorTools
     [InitializeOnLoad]
     public static class NotebookInstaller
     {
-        const string Version = "6";
+        const string Version = "7";
         const string VersionFile = "ProjectSettings/DishasterNotebook.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/NotebookRole.prefab";
         const string PageMaterialPath = "Assets/_Dishaster/Materials/M_NotebookPage.mat";
@@ -178,7 +178,8 @@ namespace Dishaster.EditorTools
             var hand = new GameObject("Pen");
             hand.transform.SetParent(parent, false);
 
-            Vector3 direction = new Vector3(0.45f, -0.5f, -0.75f).normalized;
+            // Sağa-aşağı yatık, kameraya az bakıyor: yandan görünsün (uçtan bakınca kayboluyordu).
+            Vector3 direction = new Vector3(0.75f, -0.55f, -0.35f).normalized;
             Quaternion along = Quaternion.LookRotation(direction, Vector3.up);
 
             // Klasik sarı kurşun kalem: elde görünsün.

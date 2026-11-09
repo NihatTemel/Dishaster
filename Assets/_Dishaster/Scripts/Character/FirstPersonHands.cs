@@ -25,13 +25,13 @@ namespace Dishaster
         static readonly Vector3 CameraOffset = new Vector3(0f, -1.60f, -0.06f);
 
         // Kameraya göre omuzlar: kol buradan bileğe uzanıyor; yön verilmeyen el de buradan hedefe bakıyor.
-        static readonly Vector3 LeftShoulder = new Vector3(-0.34f, -0.44f, -0.08f);
-        static readonly Vector3 RightShoulder = new Vector3(0.34f, -0.44f, -0.08f);
+        static readonly Vector3 LeftShoulder = new Vector3(-0.55f, -0.65f, 0.1f);
+        static readonly Vector3 RightShoulder = new Vector3(0.55f, -0.65f, 0.1f);
 
         // Kol: bilekten omza doğru, karakterin ceketinden. Bilek kesiğindeki kapağı kapatıyor, eli gövdeye bağlıyor.
-        const float SleeveLength = 0.36f;
-        const float SleeveRadius = 0.07f;
-        const float SleeveOverlap = 0.045f;
+        const float SleeveLength = 0.22f;
+        const float SleeveRadius = 0.05f;
+        const float SleeveOverlap = 0.03f;
 
         /// <summary>Elin istenen hali: avucun yeri, parmakların yönü, avucun baktığı yön (yönler boşsa omuzdan bakar).</summary>
         struct Pose
@@ -92,6 +92,18 @@ namespace Dishaster
                 skin.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 // Defterin ve kafanın gölgesinde kararmasın.
                 skin.receiveShadows = false;
+            }
+
+            // Bilek kesiğinin kapağı (rol rengi) kolun ucunda halka gibi görünüyordu: ceketle aynı renk, manşet gibi.
+            if (sleeve != null)
+            {
+                foreach (SkinnedMeshRenderer skin in GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                {
+                    Material[] materials = skin.sharedMaterials;
+                    for (int i = 0; i < materials.Length; i++)
+                        if (materials[i] != null && materials[i].name.Contains("FPCap")) materials[i] = sleeve;
+                    skin.sharedMaterials = materials;
+                }
             }
 
             _left = FindHand("Left");
@@ -238,7 +250,8 @@ namespace Dishaster
             {
                 Transform handle = t.Find("Handle");
                 pose.palm = handle != null ? handle.position : t.TransformPoint(new Vector3(0f, 0.015f, -0.08f));
-                pose.fingers = t.forward * 0.45f - t.up * 0.9f;
+                // Doğrama tutuşu: sap ön kolun devamı, parmaklar sapın altına kapanıyor; bilek omza bakıyor.
+                pose.fingers = t.forward - t.up * 0.25f;
                 pose.palmFacing = -t.right;
                 pose.closedFrame = FrameFist;
                 pose.curl = 1f;
