@@ -159,7 +159,7 @@ namespace Dishaster
             Log($"tarif: {slices} dilim çilek, {milk} ml süt");
 
             Check(player.GetComponentInChildren<CharacterBody>() != null, "karakter giydirilmedi");
-            Check(FindObjectOfType<FirstPersonHands>() != null, "FPS elleri yok");
+            Check(CharacterBody.FindBone(player.transform, "LeftHand") != null, "karakterin elleri yok");
 
             // Gözlemci boştaki halini ölçebilsin.
             if (_players > 1) yield return new WaitForSeconds(5f);
@@ -334,6 +334,7 @@ namespace Dishaster
             Measure("hold", player, notebook);
             yield return Shot("mute_fp_hold");
             yield return Third("mute_3p_hold", player, false);
+            yield return Near("mute_near_hold", player, notebook.LeftGripPoint, -0.6f);
 
             notebook.SetPoseForTest(NotebookPose.Draw);
             yield return new WaitForSeconds(1f);
@@ -348,14 +349,17 @@ namespace Dishaster
             Measure("draw", player, notebook);
             yield return Shot("mute_fp_draw");
             yield return Third("mute_3p_draw", player, false);
+            yield return Near("mute_near_draw", player, notebook.PenGripPoint, 0.6f);
 
             notebook.SetPoseForTest(NotebookPose.Show);
             yield return new WaitForSeconds(0.12f);
             yield return Shot("mute_fp_turn");
+            yield return Near("mute_near_turn", player, notebook.LeftGripPoint, -0.6f);
             yield return new WaitForSeconds(0.9f);
             Measure("show", player, notebook);
             yield return Shot("mute_fp_show");
             yield return Third("mute_3p_show", player, false);
+            yield return Near("mute_near_show", player, notebook.LeftGripPoint, -0.6f);
 
             notebook.SetPoseForTest(NotebookPose.Hold);
             CharacterController controller = player.GetComponent<CharacterController>();
@@ -378,24 +382,21 @@ namespace Dishaster
             Finish(_failures.Count == 0 && _errors.Count == 0, null);
         }
 
-        /// <summary>Kameraya göre konumlar (x sağ, y yukarı, z ileri): FPS elleri nerede, defter nerede.</summary>
+        /// <summary>Kameraya göre konumlar (x sağ, y yukarı, z ileri): karakterin bilekleri, defter, kalem; avuç farkı.</summary>
         void Measure(string label, DishasterPlayer player, NotebookRole notebook)
         {
             Transform view = player.playerCamera.transform;
             string Local(Vector3 world) => view.InverseTransformPoint(world).ToString("F2");
 
-            FirstPersonHands hands = FindObjectOfType<FirstPersonHands>();
-            Transform leftWrist = hands != null ? CharacterBody.FindBone(hands.transform, "LeftHand") : null;
-            Transform rightWrist = hands != null ? CharacterBody.FindBone(hands.transform, "RightHand") : null;
-            Transform leftFore = hands != null ? CharacterBody.FindBone(hands.transform, "LeftForeArm") : null;
-            Transform rightFore = hands != null ? CharacterBody.FindBone(hands.transform, "RightForeArm") : null;
+            Transform leftWrist = CharacterBody.FindBone(player.transform, "LeftHand");
+            Transform rightWrist = CharacterBody.FindBone(player.transform, "RightHand");
             Transform pencil = CharacterBody.FindBone(notebook.rightHand, "Pencil");
+            CharacterBody body = player.GetComponentInChildren<CharacterBody>();
 
-            Log($"[{label}] notebook {Local(notebook.notebook.position)} leftGrip {Local(notebook.LeftGripPoint)} penGrip {Local(notebook.PenGripPoint)}");
-            if (leftWrist != null) Log($"[{label}] FP leftWrist {Local(leftWrist.position)} scale {leftFore.localScale.x:F1} | rightWrist {Local(rightWrist.position)} scale {rightFore.localScale.x:F1}");
+            Log($"[{label}] notebook {Local(notebook.notebook.position)} leftGrip {Local(notebook.LeftGripPoint)} penGrip {Local(notebook.PenGripPoint)} kamera {view.localPosition.ToString("F2")} pivot {player.headPivot.localPosition.ToString("F2")}");
+            if (leftWrist != null) Log($"[{label}] bilekler sol {Local(leftWrist.position)} sağ {Local(rightWrist.position)} | avuç farkı {(body != null ? body.LastSnapDistance * 100f : 0f):0.0} cm");
             if (pencil != null) Log($"[{label}] pencil {Local(pencil.position)} active {pencil.gameObject.activeInHierarchy} rendered {pencil.GetComponent<Renderer>().enabled}");
-            Renderer skin = hands != null ? hands.GetComponentInChildren<SkinnedMeshRenderer>() : null;
-            if (skin != null) Log($"[{label}] FP renderer enabled {skin.enabled} bounds {Local(skin.bounds.center)} size {skin.bounds.size.ToString("F2")} layer {skin.gameObject.layer}");
+            if (body != null) Log($"[{label}] {body.Describe()}");
         }
 
         // ── Boşta (Duymadım): eller köşede, kıpırdamıyor ─────────────────────
@@ -405,12 +406,12 @@ namespace Dishaster
             yield return new WaitForSeconds(1f);
             yield return Shot(label + "_fp_idle");
             yield return Third(label + "_3p_idle", player, false);
+            yield return Near(label + "_near_idle", player, player.headPivot.position + player.transform.forward * 0.3f - Vector3.up * 0.3f, -0.6f);
 
-            // FPS elleri kameraya göre yerinde durmalı (dönmüyor, kaymıyor) ve sağ el sağda, sol el solda.
-            FirstPersonHands hands = FindObjectOfType<FirstPersonHands>();
-            Transform view = player.playerCamera.transform;
-            Transform leftWrist = CharacterBody.FindBone(hands.transform, "LeftHand");
-            Transform rightWrist = CharacterBody.FindBone(hands.transform, "RightHand");
+            // Boştaki eller gövdeye göre yerinde durmalı (dönmüyor, kaymıyor), sağ el sağda, sol el solda.
+            Transform view = player.transform;
+            Transform leftWrist = CharacterBody.FindBone(player.transform, "LeftHand");
+            Transform rightWrist = CharacterBody.FindBone(player.transform, "RightHand");
             var left = new List<Vector3>();
             var right = new List<Vector3>();
             float until = Time.time + 2f;
@@ -423,9 +424,9 @@ namespace Dishaster
 
             float spreadL = Spread(left);
             float spreadR = Spread(right);
-            Log($"[{label}] FPS bilekleri: sol {left[left.Count - 1].ToString("F2")} sağ {right[right.Count - 1].ToString("F2")}, oynama sol {spreadL * 100f:0.0} cm sağ {spreadR * 100f:0.0} cm");
-            Check(spreadL < 0.01f && spreadR < 0.01f, "boştaki FPS elleri kıpırdıyor");
-            Check(left[0].x < -0.05f && right[0].x > 0.05f, "boştaki FPS elleri yanlış tarafta");
+            Log($"[{label}] bilekler (gövdeye göre): sol {left[left.Count - 1].ToString("F2")} sağ {right[right.Count - 1].ToString("F2")}, oynama sol {spreadL * 100f:0.0} cm sağ {spreadR * 100f:0.0} cm");
+            Check(spreadL < 0.02f && spreadR < 0.02f, "boştaki eller kıpırdıyor");
+            Check(left[0].x < -0.05f && right[0].x > 0.05f, "boştaki eller yanlış tarafta");
 
             // Aşağı bakınca da eller yerinde.
             player.FaceTowards(view.position + player.transform.forward * 1f + Vector3.down * 1.2f);
@@ -619,13 +620,15 @@ namespace Dishaster
         {
             if (_shots == null) yield break;
 
-            // Kendi gövden sadece gölge, FPS elleri sadece sende: çekimde başkalarının gördüğü hale getir.
+            // Kendi kafan sadece gölge: çekimde başkalarının gördüğü hale getir.
             CharacterBody body = player.GetComponentInChildren<CharacterBody>();
             Renderer[] bodyRenderers = body != null ? body.GetComponentsInChildren<Renderer>(true) : new Renderer[0];
-            foreach (Renderer renderer in bodyRenderers) renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
-            FirstPersonHands hands = FindObjectOfType<FirstPersonHands>();
-            Renderer[] handRenderers = hands != null ? hands.GetComponentsInChildren<Renderer>(true) : new Renderer[0];
-            foreach (Renderer renderer in handRenderers) renderer.enabled = false;
+            var modes = new UnityEngine.Rendering.ShadowCastingMode[bodyRenderers.Length];
+            for (int i = 0; i < bodyRenderers.Length; i++)
+            {
+                modes[i] = bodyRenderers[i].shadowCastingMode;
+                bodyRenderers[i].shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            }
 
             var cameraObject = new GameObject("AutoTestCamera");
             var view = cameraObject.AddComponent<Camera>();
@@ -644,8 +647,43 @@ namespace Dishaster
             yield return null;
 
             Destroy(cameraObject);
-            foreach (Renderer renderer in bodyRenderers) renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly;
-            foreach (Renderer renderer in handRenderers) renderer.enabled = true;
+            for (int i = 0; i < bodyRenderers.Length; i++) bodyRenderers[i].shadowCastingMode = modes[i];
+        }
+
+        /// <summary>
+        /// Kendi karakterine yakından, yandan-önden (Unity'nin sahne görünümü gibi): elin ve kolun dışarıdan nasıl
+        /// durduğu. side eksi: soldan, artı: sağdan. Kafa da görünür.
+        /// </summary>
+        IEnumerator Near(string name, DishasterPlayer player, Vector3 focus, float side)
+        {
+            if (_shots == null) yield break;
+
+            CharacterBody body = player.GetComponentInChildren<CharacterBody>();
+            Renderer[] bodyRenderers = body != null ? body.GetComponentsInChildren<Renderer>(true) : new Renderer[0];
+            var modes = new UnityEngine.Rendering.ShadowCastingMode[bodyRenderers.Length];
+            for (int i = 0; i < bodyRenderers.Length; i++)
+            {
+                modes[i] = bodyRenderers[i].shadowCastingMode;
+                bodyRenderers[i].shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            }
+
+            var cameraObject = new GameObject("NearCamera");
+            var view = cameraObject.AddComponent<Camera>();
+            view.depth = 100f;
+            view.fieldOfView = 50f;
+            view.nearClipPlane = 0.03f;
+            Transform root = player.transform;
+            cameraObject.transform.position = focus + root.right * side + root.forward * 0.55f + Vector3.up * 0.12f;
+            cameraObject.transform.LookAt(focus);
+
+            yield return null;
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(_shots, name + ".png"));
+            yield return null;
+            yield return null;
+
+            Destroy(cameraObject);
+            for (int i = 0; i < bodyRenderers.Length; i++) bodyRenderers[i].shadowCastingMode = modes[i];
         }
 
         readonly List<string> _failures = new List<string>();

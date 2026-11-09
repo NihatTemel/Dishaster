@@ -170,7 +170,8 @@ namespace Dishaster
 
         void UpdateOwnHand()
         {
-            Transform view = _player.playerCamera.transform;
+            // Kafa (kamera uzanırken öne kayıyor; ışın ondan bağımsız olsun, el ile kamera birbirini kovalamasın).
+            Transform view = _player.headPivot;
             KitchenItem held = HeldItem;
 
             // Eşyalar trigger; oyuncunun kendi kapsülünü ışın içinden başladığı için görmüyor.

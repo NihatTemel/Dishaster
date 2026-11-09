@@ -55,11 +55,12 @@ namespace Dishaster
         public NotebookPose Pose => _pose;
 
         /// <summary>
-        /// Sol avucun yeri (defterin uzayında): alt kenarın hemen altı, ortanın biraz solu. El defteri alttan
-        /// taşıyor: avuç yukarı, parmaklar kapağın arkasını sarıyor, başparmak önde alt kenarda. Defter bu noktanın
-        /// etrafında dönüyor. Gösterirken avuç biraz arkaya kayıyor: el çeyrek dönünce parmaklar kapağın arkasına yaslanıyor.
+        /// Sol avucun yeri (defterin uzayında): kapağın alt kenarının hemen altı, ortanın biraz solu. El defteri
+        /// alttan taşıyor: avuç yukarı, alt kenar avucun üstünde. Tutarken avuç biraz önde: parmak kökleri kapağın
+        /// hemen arkasında, oradan yukarı bükülüp kapağa yaslanıyor. Gösterirken avuç kenarın tam altına geliyor
+        /// (tepsi gibi). Defter bu noktanın etrafında dönüyor.
         /// </summary>
-        public Vector3 GripLocal => new Vector3(-0.06f, -pageSize.y * 0.5f - 0.022f, Mathf.Lerp(-0.023f, 0.022f, TurnFraction));
+        public Vector3 GripLocal => new Vector3(-0.06f, -pageSize.y * 0.5f - 0.024f, Mathf.Lerp(-0.02f, 0.006f, TurnFraction));
 
         /// <summary>Gösterme dönüşünün ne kadarı yapıldı (0 kendine dönük, 1 karşıya dönük).</summary>
         public float TurnFraction => Mathf.Clamp01(Mathf.Abs(_yaw) / 180f);
@@ -82,23 +83,17 @@ namespace Dishaster
         [Header("Defter (metre)")]
         public Vector2 pageSize = new Vector2(0.5f, 0.25f);
 
-        [Header("Duruşlar: sol elin yeri (kafaya göre) ve defterin dönüşü")]
-        public Vector3 holdHand = new Vector3(-0.03f, -0.17f, 0.38f);
+        [Header("Duruşlar: sol elin yeri (gözlere göre) ve defterin dönüşü")]
+        public Vector3 holdHand = new Vector3(-0.05f, -0.22f, 0.26f);
         public Vector3 holdRotation = new Vector3(40f, 0f, 0f);
-        public Vector3 drawHand = new Vector3(-0.06f, -0.12f, 0.415f);
+        public Vector3 drawHand = new Vector3(-0.07f, -0.15f, 0.28f);
         public Vector3 drawRotation = Vector3.zero;
-        [Tooltip("Gösterirken defter alttan tutan elin üstünde saat yönünün tersine (üstten bakınca) 180° dönüyor; el çeyrek dönüyor (parmaklar dışarı, tepsi gibi).")]
-        public Vector3 showHand = new Vector3(0f, -0.27f, 0.45f);
+        [Tooltip("Gösterirken defter alttan tutan elin üstünde saat yönünün tersine (üstten bakınca) 180° dönüyor; el 90° (ön kol dirsekten dışarı açılıyor, parmaklar sola, tepsi gibi). El bu yüzden biraz solda.")]
+        public Vector3 showHand = new Vector3(-0.18f, -0.26f, 0.27f);
         [Tooltip("Y: dönüş açısı; eksi = üstten bakınca saat yönünün tersi (sağ kenar öne gelip karşıya döner).")]
         public Vector3 showRotation = new Vector3(0f, -180f, 0f);
-        [Tooltip("Diğer oyuncularda defter bu kadar öne (eksi: geri) alınıyor: kendi ekranındaki yer kol boyunun ucunda, dışarıdan dirsek bükük, göğüs önünde.")]
-        public float remoteForward = -0.06f;
-        [Tooltip("Diğer oyuncularda defter bu kadar aşağıda: kendi ekranında görünsün diye göze yakın tutuluyor, dışarıdan göğüs/karın hizasında (kol aşağıda, ön kol yatay).")]
-        public float remoteDown = 0.48f;
-        [Tooltip("Gösterirken dışarıdan biraz daha yukarıda: karşıdakinin göğsü hizasında.")]
-        public float remoteShowUp = 0.1f;
-        [Tooltip("Diğer oyuncularda defter bakışın eğimini bu kadar izliyor: yukarı bakınca defter kafanın üstüne çıkmasın.")]
-        [Range(0f, 1f)] public float remotePitchFollow = 0.4f;
+        [Tooltip("Defter bakışın eğimini bu kadar izliyor: aşağı bakınca defter de biraz iniyor (okur gibi), yukarı bakınca kafanın üstüne çıkmıyor. Herkeste aynı.")]
+        [Range(0f, 1f)] public float pitchFollow = 0.6f;
 
         [Header("Sağ el (deftere göre)")]
         public Vector3 penLift = new Vector3(0f, 0f, -0.004f);
@@ -397,12 +392,6 @@ namespace Dishaster
                     break;
             }
 
-            if (!_isLocal)
-            {
-                targetHand.z += remoteForward;
-                targetHand.y -= remoteDown;
-                if (_pose == NotebookPose.Show) targetHand.y += remoteShowUp;
-            }
             Quaternion targetTilt = Quaternion.Euler(targetRotation.x, 0f, targetRotation.z);
             float targetYaw = targetRotation.y;
             Quaternion targetQuaternion = Quaternion.Euler(0f, targetYaw, 0f) * targetTilt;
@@ -432,16 +421,12 @@ namespace Dishaster
                 _drawBlend = Mathf.Max(_drawBlend, 1f - settle);
             }
 
-            // Defter, tutma noktası (sol elin yeri) elde olacak şekilde konuyor. Kendi ekranında bakışa tam bağlı;
-            // dışarıdan eğimi azaltılmış (yukarı/aşağı bakınca kol omuzdan dönüp durmasın).
+            // Defter, tutma noktası (sol elin yeri) elde olacak şekilde konuyor. Kendi ekranında ve dışarıdan aynı yer:
+            // kafaya göre, bakışın eğimini kısmen izleyerek. Kolun yetişmediği yerde karakter defteri avucuna alıyor.
             Vector3 localPosition = _handPosition - _localRotation * GripLocal;
             Transform head = _owner.headPivot;
-            Quaternion frame = head.rotation;
-            if (!_isLocal)
-            {
-                float pitch = Mathf.DeltaAngle(0f, head.localEulerAngles.x);
-                frame = _owner.transform.rotation * Quaternion.Euler(pitch * remotePitchFollow, 0f, 0f);
-            }
+            float pitch = Mathf.DeltaAngle(0f, head.localEulerAngles.x);
+            Quaternion frame = _owner.transform.rotation * Quaternion.Euler(pitch * pitchFollow, 0f, 0f);
 
             notebook.SetPositionAndRotation(head.position + frame * localPosition, frame * _localRotation);
 

@@ -9,11 +9,15 @@ namespace Dishaster
     /// <summary>
     /// Karakter giydirme (prefab). Oyun oyuncusu doğdukça rolüne göre art'ın karakterini (Assets/ART/3D/Karakterler,
     /// bkz. KARAKTERLER.md) kapsülün yerine koyuyor: Görmedim = Aşçı, Duymadım = Yorumcu, Bilmiyorum = Çizer.
-    /// Kendi karakterin sadece gölge olarak çiziliyor; onun yerine kameraya kendi FPS ellerin bağlanıyor.
+    /// Kamera karakterin göz hizasında (herkeste aynı). Kendi ekranında da kendi gövden görünüyor: başkalarının
+    /// gördüğü kollar ve eller (defter, kalem, eşya iki tarafta aynı yerde); sadece kafa ve takıları gölge olarak.
     /// Her makinede ayrı ve sadece görüntü: ağa bir şey gitmiyor.
     /// </summary>
     public class CharacterVisuals : MonoBehaviour
     {
+        // Kendi ekranında gizlenen parçalar (kameranın içinde kalıyorlar): kafa, gözler, saç, şapka, gözlük, kulaklık, bant.
+        static readonly string[] HeadParts = { "Head", "Eyes", "Hair", "Hat", "Glasses", "Bandana", "MouthBand" };
+
         [Serializable]
         public class Character
         {
@@ -58,6 +62,9 @@ namespace Dishaster
             body.transform.localPosition = new Vector3(0f, feetOffset, 0f);
             body.transform.localRotation = Quaternion.identity;
 
+            // Kamera (ve kafa pivotu) karakterin gözlerinin hizasında: her makinede aynı, rolden belli.
+            AlignEyes(player, body.transform);
+
             body.AddComponent<CharacterBody>().Setup(player, controller, character.lidAngle, MonkeyRoles.IsMouthTied(player.role), character.hands, character.handPoses);
 
             // Kapsül ve vizör artık karakterin kendisi.
@@ -66,35 +73,35 @@ namespace Dishaster
 
             if (!player.isLocalPlayer) return;
 
-            // Kendi gövdemiz görünmesin ama gölgesi kalsın.
-            foreach (Renderer renderer in body.GetComponentsInChildren<Renderer>(true))
-                renderer.shadowCastingMode = ShadowCastingMode.ShadowsOnly;
-
-            if (character.hands == null || character.handPoses == null) return;
-
-            GameObject hands = Instantiate(character.hands);
-            hands.name = "FirstPersonHands";
-            hands.AddComponent<FirstPersonHands>().Setup(player, character.handPoses, SleeveMaterial(body));
-        }
-
-        /// <summary>Karakterin ceket malzemesi (FPS kolları için); yoksa gövdenin ilk malzemesi.</summary>
-        static Material SleeveMaterial(GameObject body)
-        {
-            Renderer source = null;
             foreach (Renderer renderer in body.GetComponentsInChildren<Renderer>(true))
             {
-                if (renderer.name.Contains("Jacket")) { source = renderer; break; }
-                if (source == null) source = renderer;
+                if (IsHeadPart(renderer.name)) renderer.shadowCastingMode = ShadowCastingMode.ShadowsOnly;
+
+                // Kollar ve eller kendi ekranında defterin/kafanın gölgesinde kararmasın.
+                if (renderer.name.Contains("Arms")) renderer.receiveShadows = false;
+
+                // Kollar kameranın önüne kalkınca gövdenin sınır kutusundan çıkıyor: sınırlar her kare pozdan.
+                if (renderer is SkinnedMeshRenderer skin) skin.updateWhenOffscreen = true;
             }
+        }
 
-            if (source == null) return null;
+        static bool IsHeadPart(string name)
+        {
+            foreach (string part in HeadParts)
+                if (name.Contains(part))
+                    return true;
+            return false;
+        }
 
-            // Ceket dokusu silindirin UV'sinde karışık durur: aynı malzemenin düz krem (aşçı ceketi) hali.
-            var material = new Material(source.sharedMaterial) { mainTexture = null };
-            material.SetTexture("_BumpMap", null);
-            material.DisableKeyword("_NORMALMAP");
-            material.color = new Color(0.92f, 0.87f, 0.77f);
-            return material;
+        /// <summary>Kafa pivotu gözlerin (Eye_L/Eye_R, yoksa göz kapakları) ortasında: yükseklik ve önde.</summary>
+        static void AlignEyes(DishasterPlayer player, Transform body)
+        {
+            Transform left = CharacterBody.FindBone(body, "Eye_L") ?? CharacterBody.FindBone(body, "Lid_L");
+            Transform right = CharacterBody.FindBone(body, "Eye_R") ?? CharacterBody.FindBone(body, "Lid_R");
+            if (left == null || right == null) return;
+
+            Vector3 eyes = player.transform.InverseTransformPoint((left.position + right.position) * 0.5f);
+            player.headPivot.localPosition = new Vector3(player.headPivot.localPosition.x, eyes.y, eyes.z);
         }
     }
 }

@@ -12,18 +12,26 @@ namespace Dishaster
         // FP_Poses'ta kapalı kare (8 tutma, 2 yumruk); parmaklar açık kare (1) ile bu kare arasında, curl kadar.
         public int closedFrame;
         public float curl;
+        // Kanca: parmaklar sadece köklerinden bükülüyor, boğumlar düz (ince bir kenarı arkadan kavramak için:
+        // yumruk gibi kapanınca parmaklar defterin içinden geçiyordu).
+        public bool hook;
     }
 
     /// <summary>
-    /// Rolün o anki işine göre iki elin hedefi. Kendi ekranındaki FPS elleri ve başkalarının gördüğü karakter aynı
-    /// hedefi kullanıyor: defter, kalem, tutulan eşya ve dokunulan yer iki tarafta da aynı yerde, aynı tutuşla.
-    /// İşi olmayan el boşta (FPS'te ekranın alt köşesinde, karakterde animasyonla yanda sallanıyor).
+    /// Rolün o anki işine göre iki elin hedefi. Karakterin kolları bunu kullanıyor; kendi ekranında da aynı kollar
+    /// göründüğü için defter, kalem, tutulan eşya ve dokunulan yer iki tarafta aynı yerde, aynı tutuşla.
+    /// İşi olmayan el: kendi ekranında göğüs önünde hazır (ekranın alt köşesinde görünüyor), başkalarında yanda.
     /// </summary>
     public static class HandGoals
     {
         public const int FrameOpen = 1;
         public const int FrameFist = 2;
         public const int FrameGrip = 8;
+
+        // Görmedim'in kendi ekranında boştaki el (sağ el; sol el aynası): göğüs önünde, öne uzanmış (yoklar gibi),
+        // bakışın eğimini yarı yarıya izliyor. Gözlere göre.
+        static readonly Vector3 ReadyPalm = new Vector3(0.19f, -0.3f, 0.33f);
+        const float ReadyPitchFollow = 0.5f;
 
         public static void For(DishasterPlayer player, out HandGoal left, out HandGoal right)
         {
@@ -32,27 +40,15 @@ namespace Dishaster
             if (player == null) return;
 
             NotebookRole notebook = NotebookRole.Instance;
-            if (notebook != null && notebook.Owner == player)
+            bool notebookOwner = notebook != null && notebook.Owner == player;
+            if (notebookOwner)
             {
-                // Sol el defteri alttan taşıyor: avuç yukarı, parmaklar arkaya uzanıp kapağın arkasını sarıyor,
-                // başparmak önde. Gösterirken defter 180° dönüyor ama el sadece çeyrek (bilek bundan fazlasını doğal
-                // yapamıyor): parmaklar dışarı (sola) bakıyor, tepsi tutar gibi, uçları kapağın arkasına yaslı.
-                Transform book = notebook.notebook;
-                float turn = notebook.TurnFraction;
-                left = new HandGoal
-                {
-                    active = true,
-                    palm = notebook.LeftGripPoint,
-                    fingers = Quaternion.AngleAxis(90f * turn, book.up) * book.forward,
-                    palmFacing = book.up,
-                    // İnce kenara sıkı sarılsın: yumruk karesine doğru; gösterirken gevşiyor (tepsi gibi taşıyor).
-                    closedFrame = FrameFist,
-                    curl = Mathf.Lerp(0.65f, 0.3f, turn),
-                };
+                left = NotebookGrip(notebook);
 
                 // Sağ el sadece çizerken: kalemi yumrukla kavrıyor, parmaklar kalemin ucuna doğru.
                 if (notebook.IsDrawing)
                 {
+                    Transform book = notebook.notebook;
                     right = new HandGoal
                     {
                         active = true,
@@ -63,34 +59,84 @@ namespace Dishaster
                         curl = 0.8f,
                     };
                 }
-
-                return;
             }
-
-            if (player.role != MonkeyRoles.LowVision) return;
-
-            KitchenCounter counter = KitchenCounter.Instance;
-            if (counter != null && counter.Held != null)
+            else if (player.role == MonkeyRoles.LowVision)
             {
-                right = Grip(counter.Held);
-                return;
-            }
-
-            // Bir yere dokunuyor: el açık, avuç yüzeye, parmaklar ileri-aşağı (yokluyor).
-            Transform hand = LowVisionRole.Hand;
-            if (hand != null && hand.gameObject.activeInHierarchy && LowVisionRole.Touching)
-            {
-                Vector3 forward = hand.forward;
-                right = new HandGoal
+                KitchenCounter counter = KitchenCounter.Instance;
+                if (counter != null && counter.Held != null)
                 {
-                    active = true,
-                    palm = hand.position,
-                    fingers = forward - Vector3.up * 0.3f,
-                    palmFacing = -Vector3.up + forward * 0.15f,
-                    closedFrame = FrameGrip,
-                    curl = 0.15f,
-                };
+                    right = Grip(counter.Held);
+                }
+                else
+                {
+                    // Bir yere dokunuyor: el açık, avuç yüzeye, parmaklar ileri-aşağı (yokluyor).
+                    Transform hand = LowVisionRole.Hand;
+                    if (hand != null && hand.gameObject.activeInHierarchy && LowVisionRole.Touching)
+                    {
+                        Vector3 forward = hand.forward;
+                        right = new HandGoal
+                        {
+                            active = true,
+                            palm = hand.position,
+                            fingers = forward - Vector3.up * 0.3f,
+                            palmFacing = -Vector3.up + forward * 0.15f,
+                            closedFrame = FrameGrip,
+                            curl = 0.15f,
+                        };
+                    }
+                }
             }
+
+            // Görmedim kendi ekranında boştaki ellerini göğüs önünde görüyor (yoklar gibi öne uzanmış). Başkaları bunu
+            // görmüyor (onlarda kollar yanda sallanıyor). Diğer rollerde boştaki kollar yanda, aşağı bakınca görünüyor.
+            if (player.isLocalPlayer && !player.ControlBlocked && player.role == MonkeyRoles.LowVision)
+            {
+                if (!left.active) left = Ready(player, true);
+                if (!right.active) right = Ready(player, false);
+            }
+        }
+
+        /// <summary>
+        /// Sol el defteri alttan tutuyor: avuç yukarı, alt kenar avucun üstünde, parmaklar kökten bükülüp kapağın
+        /// arkasına yaslanıyor (kanca), başparmak önde. Parmaklar ileri-sağa (ön kol gövdenin önüne doğru, bilek düz).
+        /// Gösterirken defter avucun üstünde saat yönünün tersine (üstten) 180° dönüyor, el 90°: ön kol dirsekten
+        /// dışarı açılıyor (doğal sınır), parmaklar sola bakıyor, el tepsi gibi açılıyor.
+        /// </summary>
+        static HandGoal NotebookGrip(NotebookRole notebook)
+        {
+            Transform book = notebook.notebook;
+            float turn = notebook.TurnFraction;
+            return new HandGoal
+            {
+                active = true,
+                palm = notebook.LeftGripPoint,
+                fingers = Quaternion.AngleAxis(Mathf.Lerp(30f, 120f, turn), book.up) * book.forward,
+                palmFacing = book.up,
+                closedFrame = FrameFist,
+                curl = Mathf.Lerp(0.9f, 0.15f, turn),
+                hook = true,
+            };
+        }
+
+        static HandGoal Ready(DishasterPlayer player, bool left)
+        {
+            Transform head = player.headPivot;
+            float pitch = Mathf.DeltaAngle(0f, head.eulerAngles.x);
+            Quaternion frame = Quaternion.Euler(pitch * ReadyPitchFollow, player.transform.eulerAngles.y, 0f);
+            float side = left ? -1f : 1f;
+
+            Vector3 forward = frame * Vector3.forward;
+            Vector3 up = frame * Vector3.up;
+            Vector3 right = frame * Vector3.right;
+            return new HandGoal
+            {
+                active = true,
+                palm = head.position + frame * new Vector3(ReadyPalm.x * side, ReadyPalm.y, ReadyPalm.z),
+                fingers = forward + up * 0.1f - right * (0.25f * side),
+                palmFacing = -up - right * (0.5f * side),
+                closedFrame = FrameGrip,
+                curl = 0.45f,
+            };
         }
 
         /// <summary>
@@ -151,7 +197,7 @@ namespace Dishaster
 
         /// <summary>
         /// Elin şimdiki yönü (kemik eksenlerinden bağımsız, konumlardan): parmaklar bilekten orta parmak köküne,
-        /// avuç bu yön ile işaret→serçe ekseninin çarpımı (sol elde ters). FPS elinde ve karakterde aynı hesap.
+        /// avuç bu yön ile işaret→serçe ekseninin çarpımı (sol elde ters).
         /// </summary>
         public static bool TryMeasure(Transform wrist, Transform knuckle, Transform index, Transform pinky, bool left, out Quaternion rotation)
         {
@@ -173,6 +219,23 @@ namespace Dishaster
             return goal.fingers.sqrMagnitude > 1e-8f && goal.palmFacing.sqrMagnitude > 1e-8f
                 ? Quaternion.LookRotation(goal.fingers, goal.palmFacing)
                 : Quaternion.identity;
+        }
+
+        /// <summary>
+        /// Bir parmak kemiğinin dönüşü: açık ile kapalı arasında. Kancada kök kemik (1) çok, boğumlar (2, 3) az
+        /// bükülüyor; başparmak kancada az kapanıyor (önde, kenarın altında).
+        /// </summary>
+        public static Quaternion Finger(string bone, Quaternion open, Quaternion closed, HandGoal goal)
+        {
+            float amount = goal.curl;
+            if (goal.hook)
+            {
+                char last = bone[bone.Length - 1];
+                float segment = bone.Contains("Thumb") ? 0.25f : last == '1' ? 1f : last == '2' ? 0.18f : 0.1f;
+                amount *= segment;
+            }
+
+            return Quaternion.Slerp(open, closed, amount);
         }
     }
 }
