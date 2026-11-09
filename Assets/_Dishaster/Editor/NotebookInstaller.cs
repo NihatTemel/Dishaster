@@ -14,7 +14,7 @@ namespace Dishaster.EditorTools
     [InitializeOnLoad]
     public static class NotebookInstaller
     {
-        const string Version = "9";
+        const string Version = "11";
         const string VersionFile = "ProjectSettings/DishasterNotebook.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/NotebookRole.prefab";
         const string PageMaterialPath = "Assets/_Dishaster/Materials/M_NotebookPage.mat";

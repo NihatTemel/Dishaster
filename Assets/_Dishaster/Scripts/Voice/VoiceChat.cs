@@ -33,6 +33,10 @@ namespace Dishaster
 
         static VoiceChat s_instance;
 
+        [Header("Açık/kapalı")]
+        [Tooltip("Şimdilik kapalı: mikrofon hiç açılmıyor, ses gitmiyor, gösterge çıkmıyor. Açmak için prefab'da işaretle.")]
+        public bool voiceEnabled;
+
         [Header("Mikrofon")]
         [Tooltip("Bu seviyenin (RMS) üstü konuşma sayılıyor.")]
         public float gateThreshold = 0.012f;
@@ -93,6 +97,8 @@ namespace Dishaster
 
         void Update()
         {
+            if (!voiceEnabled) return;
+
             if (_local == null)
             {
                 if (NetworkClient.localPlayer == null || !NetworkClient.localPlayer.TryGetComponent(out _local)) return;
@@ -264,7 +270,8 @@ namespace Dishaster
 
         static void OnClientVoice(VoiceRelayMessage message)
         {
-            if (s_instance != null) s_instance.Receive(message.speaker, message.data);
+            // Kapalıyken eski sürümle gelen ses de çalınmıyor.
+            if (s_instance != null && s_instance.voiceEnabled) s_instance.Receive(message.speaker, message.data);
         }
     }
 }

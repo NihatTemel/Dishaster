@@ -24,12 +24,15 @@ namespace Dishaster
         // "-dishasterPlayers 2": host ikinci oyuncuyu bekliyor; "-dishasterRole observe": local'e katılan gözlemci
         // (Duymadım), diğer oyuncuyu önden periyodik fotoğraflıyor (uzaktan nasıl göründüğü).
         const string PlayersFlag = "-dishasterPlayers";
+        // "-dishasterPort 7790": testler editörde açık oyunla (7777) çakışmasın.
+        const string PortFlag = "-dishasterPort";
 
         string _shots;
         bool _mute;
         bool _deaf;
         bool _observe;
         int _players = 1;
+        ushort _port;
         const float TimeoutSeconds = 150f;
 
         readonly List<string> _errors = new List<string>();
@@ -56,6 +59,7 @@ namespace Dishaster
                 if (args[i] == RoleFlag) _deaf = args[i + 1] == "deaf";
                 if (args[i] == RoleFlag) _observe = args[i + 1] == "observe";
                 if (args[i] == PlayersFlag) int.TryParse(args[i + 1], out _players);
+                if (args[i] == PortFlag) ushort.TryParse(args[i + 1], out _port);
             }
 
             if (_shots != null) System.IO.Directory.CreateDirectory(_shots);
@@ -108,6 +112,7 @@ namespace Dishaster
             // ── Lobi ─────────────────────────────────────────────────────────
             while (DishasterNetworkManager.Instance == null) yield return null;
             DishasterNetworkManager manager = DishasterNetworkManager.Instance;
+            if (_port != 0 && manager.localTransport is PortTransport portTransport) portTransport.Port = _port;
             if (_observe)
             {
                 IEnumerator observe = RunObserver(manager);
@@ -345,7 +350,9 @@ namespace Dishaster
             yield return Third("mute_3p_draw", player, false);
 
             notebook.SetPoseForTest(NotebookPose.Show);
-            yield return new WaitForSeconds(1f);
+            yield return new WaitForSeconds(0.12f);
+            yield return Shot("mute_fp_turn");
+            yield return new WaitForSeconds(0.9f);
             Measure("show", player, notebook);
             yield return Shot("mute_fp_show");
             yield return Third("mute_3p_show", player, false);
@@ -523,6 +530,30 @@ namespace Dishaster
                 float next = Time.time + 2.5f;
                 while (Time.time < next)
                 {
+                    // Defter duruşu değişince yakın çekim: dönüşün ortası ve yerine oturmuş hali.
+                    NotebookRole watchedBook = NotebookRole.Instance;
+                    if (watchedBook != null && watchedBook.Owner == watched && watched != null)
+                    {
+                        if (watchedBook.Pose != _seenPose)
+                        {
+                            _seenPose = watchedBook.Pose;
+                            _poseSince = Time.time;
+                            _poseShots = 0;
+                        }
+
+                        float since = Time.time - _poseSince;
+                        if (_poseShots == 0 && since >= 0.12f && _seenPose != NotebookPose.Hold)
+                        {
+                            _poseShots = 1;
+                            yield return CloseUp("observe_" + _seenPose.ToString().ToLowerInvariant() + "_turn", watched, watchedBook);
+                        }
+                        else if (_poseShots <= 1 && since >= 1f)
+                        {
+                            _poseShots = 2;
+                            yield return CloseUp("observe_" + _seenPose.ToString().ToLowerInvariant(), watched, watchedBook);
+                        }
+                    }
+
                     if (watchedBody != null && watchedBody.LastSnapDistance > 0f)
                     {
                         snapMax = Mathf.Max(snapMax, watchedBody.LastSnapDistance);
@@ -618,6 +649,31 @@ namespace Dishaster
         }
 
         readonly List<string> _failures = new List<string>();
+        NotebookPose _seenPose = (NotebookPose)255;
+        float _poseSince;
+        int _poseShots;
+
+        /// <summary>Defteri tutan Bilmiyorum'a önden-soldan yakın kamera (karşıdaki oyuncunun gördüğü gibi).</summary>
+        IEnumerator CloseUp(string name, DishasterPlayer other, NotebookRole book)
+        {
+            if (_shots == null) yield break;
+
+            var cameraObject = new GameObject("CloseUpCamera");
+            var view = cameraObject.AddComponent<Camera>();
+            view.depth = 100f;
+            view.fieldOfView = 45f;
+            view.nearClipPlane = 0.05f;
+            Transform root = other.transform;
+            Vector3 target = book.LeftGripPoint;
+            cameraObject.transform.position = target + root.forward * 1.1f - root.right * 0.25f + Vector3.up * 0.15f;
+            cameraObject.transform.LookAt(target + root.right * 0.12f);
+
+            yield return null;
+            yield return new WaitForEndOfFrame();
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(_shots, name + ".png"));
+            yield return null;
+            Destroy(cameraObject);
+        }
         float _nextSnapLog;
 
         void Check(bool condition, string message)
