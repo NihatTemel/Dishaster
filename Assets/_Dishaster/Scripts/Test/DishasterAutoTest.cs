@@ -362,17 +362,26 @@ namespace Dishaster
             yield return Third("mute_3p_draw", player, false);
             yield return Near("mute_near_draw", player, notebook.PenGripPoint, 0.6f);
 
+            // Çiz → göster ve göster → tut dönüşleri boyunca: bilek kırılmamalı, parmak defterin içinden geçmemeli.
+            CharacterBody turnBody = player.GetComponentInChildren<CharacterBody>();
             notebook.SetPoseForTest(NotebookPose.Show);
-            yield return new WaitForSeconds(0.12f);
+            yield return WatchTurn("draw→show", player, turnBody, notebook, 0.3f);
             yield return Shot("mute_fp_turn");
             yield return Near("mute_near_turn", player, notebook.LeftGripPoint, -0.6f);
-            yield return new WaitForSeconds(0.9f);
+            yield return WatchTurn("draw→show", player, turnBody, notebook, 0.7f);
             Measure("show", player, notebook);
             yield return Shot("mute_fp_show");
             yield return Third("mute_3p_show", player, false);
             yield return Near("mute_near_show", player, notebook.LeftGripPoint, -0.6f);
 
             notebook.SetPoseForTest(NotebookPose.Hold);
+            yield return WatchTurn("show→hold", player, turnBody, notebook, 1f);
+            notebook.SetPoseForTest(NotebookPose.Show);
+            yield return WatchTurn("hold→show", player, turnBody, notebook, 0.2f);
+            yield return Near("mute_near_turn2", player, notebook.LeftGripPoint, -0.6f);
+            yield return WatchTurn("hold→show", player, turnBody, notebook, 0.8f);
+            notebook.SetPoseForTest(NotebookPose.Hold);
+            yield return WatchTurn("show→hold", player, turnBody, notebook, 1f);
             CharacterController controller = player.GetComponent<CharacterController>();
             float until = Time.time + 1.4f;
             bool shot = false;
@@ -393,6 +402,47 @@ namespace Dishaster
             Finish(_failures.Count == 0 && _errors.Count == 0, null);
         }
 
+        /// <summary>Bir süre her kare: sol bileğin en çok bükülmesi ve defterin içinden geçen parmak kemiği sayısı.</summary>
+        IEnumerator WatchTurn(string label, DishasterPlayer player, CharacterBody body, NotebookRole notebook, float seconds)
+        {
+            float maxBend = 0f;
+            int maxThrough = 0;
+            float until = Time.time + seconds;
+            while (Time.time < until)
+            {
+                yield return null;
+                maxBend = Mathf.Max(maxBend, body.WristBend(true));
+                maxThrough = Mathf.Max(maxThrough, FingersThroughBook(player, notebook));
+            }
+
+            Log($"[show] dönüş {label} ({seconds:0.0} sn): sol bilek en çok {maxBend:0}°, defterden geçen parmak kemiği {maxThrough}");
+            Check(maxBend <= 40f, $"dönüşte ({label}) bilek kırık gibi bükülüyor ({maxBend:0}°)");
+            Check(maxThrough == 0, $"dönüşte ({label}) parmak defterin içinden geçiyor ({maxThrough} kemik)");
+        }
+
+        /// <summary>
+        /// Sol elin defterin içinden geçen kemikleri: defterin alanında (kenarları içinde) ve kapağın içinde ya da sayfanın
+        /// önünde. Kenardan dolanan başparmak alanın dışında kalıyor.
+        /// </summary>
+        static int FingersThroughBook(DishasterPlayer player, NotebookRole notebook)
+        {
+            Transform hand = CharacterBody.FindBone(player.transform, "LeftHand");
+            if (hand == null) return 0;
+
+            Transform book = notebook.notebook;
+            Vector2 half = notebook.pageSize * 0.5f;
+            int count = 0;
+            foreach (Transform bone in hand.GetComponentsInChildren<Transform>())
+            {
+                if (bone == hand || !bone.name.StartsWith("LeftHand")) continue;
+
+                Vector3 local = book.InverseTransformPoint(bone.position);
+                if (Mathf.Abs(local.x) < half.x && Mathf.Abs(local.y) < half.y && local.z < 0.01f && local.z > -0.04f) count++;
+            }
+
+            return count;
+        }
+
         /// <summary>Kameraya göre konumlar (x sağ, y yukarı, z ileri): karakterin bilekleri, defter, kalem; avuç farkı.</summary>
         void Measure(string label, DishasterPlayer player, NotebookRole notebook)
         {
@@ -411,7 +461,9 @@ namespace Dishaster
 
             // Bilek kırık görünmesin; defter kendi ekranını kapatmasın (çizerken hariç).
             float coverage = Coverage(player.playerCamera, notebook);
-            Log($"[{label}] defter ekranın %{coverage * 100f:0}'ini kaplıyor; sol bilek {body.WristBend(true):0}°");
+            int through = FingersThroughBook(player, notebook);
+            Log($"[{label}] defter ekranın %{coverage * 100f:0}'ini kaplıyor; sol bilek {body.WristBend(true):0}°; defterden geçen parmak kemiği {through}");
+            Check(through == 0, $"{label}: parmak defterin içinden geçiyor ({through} kemik)");
             Check(body.WristBend(true) <= 40f, $"{label}: defteri tutan bilek kırık gibi bükülüyor ({body.WristBend(true):0}°)");
             if (label != "draw") Check(coverage <= 0.25f, $"{label}: defter ekranın çoğunu kaplıyor (%{coverage * 100f:0})");
         }

@@ -95,9 +95,8 @@ namespace Dishaster
         }
 
         /// <summary>
-        /// Sol el defteri alttan taşıyor (yer ve yön NotebookRole'dan): tutarken avuç arka kapağa yaslı, parmaklar
-        /// kapak boyunca açık; gösterirken defter alt kenarıyla avucun üstünde, el saat yönünün tersine dönmüş,
-        /// parmaklar karşıya. Ön kol elin devamı, bilek düz.
+        /// Sol el defteri arkadan taşıyor (yer ve yön NotebookRole'dan, deftere sabit): avuç arka kapağa yaslı,
+        /// parmaklar kapak boyunca yukarı, başparmak sol kenardan önde. Defter dönünce el de aynen dönüyor.
         /// </summary>
         static HandGoal NotebookGrip(NotebookRole notebook)
         {

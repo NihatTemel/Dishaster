@@ -567,9 +567,20 @@ namespace Dishaster
             {
                 // Defter her kare baştan yerleşiyor (NotebookRole), geri almaya gerek yok.
                 if (!_leftArm.goal.active || _leftArm.weight < 0.95f) return;
+
+                // Defter elle tek parça: bilek sınırı yüzünden el hedeften dönmüşse defter de avucun etrafında onunla
+                // dönüyor (parmak defterin içinden geçmesin), sonra avuca taşınıyor.
+                Transform book = notebook.notebook;
+                if (HandGoals.TryMeasure(_leftArm.wrist, _leftArm.knuckle, _leftArm.index, _leftArm.pinky, true, out Quaternion actual))
+                {
+                    Quaternion turn = actual * Quaternion.Inverse(HandGoals.Wanted(_leftArm.goal));
+                    Vector3 pivot = _leftArm.goal.palm;
+                    book.SetPositionAndRotation(pivot + turn * (book.position - pivot), turn * book.rotation);
+                }
+
                 Vector3 offset = Palm(_leftArm) - _leftArm.goal.palm;
                 LastSnapDistance = offset.magnitude;
-                notebook.notebook.position += offset;
+                book.position += offset;
                 return;
             }
 
