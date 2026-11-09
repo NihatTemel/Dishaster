@@ -37,6 +37,14 @@ namespace Dishaster
         public static DishasterNetworkManager Instance => singleton as DishasterNetworkManager;
 
         public bool SteamReady { get; private set; }
+
+        /// <summary>
+        /// Steam açık ve sunuculara bağlı (giriş yapılmış). Steam istemcisi çalışırken de bağlantı kopabiliyor (ör.
+        /// hesap başka yerde açılınca "Session Replaced" ile çıkış); o zaman lobi kurulamıyor, katılınamıyor.
+        /// </summary>
+        public bool SteamOnline => SteamReady && SteamUser.BLoggedOn();
+
+        public const string SteamOfflineText = "Steam çevrimdışı: Steam'de yeniden giriş yap (ya da Steam'i yeniden başlat). Local oynanabilir.";
         public bool IsBusy { get; private set; }
         public string RoomCode { get; private set; } = "";
 
@@ -121,6 +129,11 @@ namespace Dishaster
         public void HostSteam()
         {
             if (!SteamReady) return;
+            if (!SteamOnline)
+            {
+                Status = SteamOfflineText;
+                return;
+            }
 
             BeginSession(steamTransport);
             IsBusy = true;
@@ -132,6 +145,11 @@ namespace Dishaster
         public void JoinSteam(string code)
         {
             if (!SteamReady) return;
+            if (!SteamOnline)
+            {
+                Status = SteamOfflineText;
+                return;
+            }
 
             code = code == null ? "" : code.Trim();
             if (code.Length == 0)
@@ -156,7 +174,10 @@ namespace Dishaster
 
             if (callback.m_eResult != EResult.k_EResultOK)
             {
-                Status = "Lobi oluşturulamadı: " + callback.m_eResult;
+                Status = callback.m_eResult == EResult.k_EResultNoConnection
+                    ? SteamOfflineText
+                    : "Lobi oluşturulamadı: " + callback.m_eResult;
+                Debug.LogWarning("[Dishaster] Steam lobisi oluşturulamadı: " + callback.m_eResult);
                 return;
             }
 

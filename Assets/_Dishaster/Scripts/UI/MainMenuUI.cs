@@ -29,14 +29,19 @@ namespace Dishaster
         void Update()
         {
             bool idle = !Manager.IsBusy && !NetworkClient.active && !NetworkServer.active;
+            bool online = Manager.SteamOnline;
 
-            hostButton.interactable = idle && Manager.SteamReady;
-            joinButton.interactable = idle && Manager.SteamReady;
-            roomCodeInput.interactable = idle && Manager.SteamReady;
+            hostButton.interactable = idle && online;
+            joinButton.interactable = idle && online;
+            roomCodeInput.interactable = idle && online;
             hostLocalButton.interactable = idle;
             joinLocalButton.interactable = idle;
 
-            statusText.text = Manager.Status;
+            // Steam açık ama sunuculara bağlı değilse (lobi kurulamaz) bunu söyle; bağlantı gelince yazı kalkıyor.
+            string status = Manager.Status;
+            if (Manager.SteamReady && !online && idle && string.IsNullOrEmpty(status)) status = DishasterNetworkManager.SteamOfflineText;
+            if (online && status == DishasterNetworkManager.SteamOfflineText) status = "";
+            statusText.text = status;
         }
     }
 }
