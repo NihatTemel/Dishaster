@@ -31,10 +31,13 @@ Son güncelleme: 9 Kasım 2026.
 | `PF_Kose_L` | `KoseModulu` | 120 ya da 170 cm her kol | arka kol ve yan kol boyu (50 / 100'lük dolap); tezgahın boş uçları |
 | `PF_Duvar_Rafi_150` | `RafModulu` | 150 × 54 cm | kat sayısı 1–4, ilk kat yüksekliği, kat arası |
 | `PF_Ada_200` | `AdaModulu` | 200 × 150 × 90 cm | ön ve arka sırada ikişer 100'lük yuva: her biri `Kapali` (düz panel) ya da `Dolap` |
+| `PF_Ocak_100` | — | 100 × 70 × 90 cm | yalnızca renk; iki göz, fırın kapağı, üç düğme, ızgara ve tepsi |
+| `PF_Davlumbaz_100` | — | 100 × 60 cm, yerden 159–250 cm | yalnızca renk; ocağın tam üstüne aynı noktaya konur |
+| `PF_Buzdolabi_100` | — | 100 × 70 × 200 cm | yalnızca renk; iki kapak (sağdan menteşeli), üç raf |
 
-Dolap, L köşe, ada ve duvar dolabının kökünde ayrıca `MobilyaRengi` var (renk teması).
+Dolap, L köşe, ada, duvar dolabı, ocak, davlumbaz ve buzdolabının kökünde ayrıca `MobilyaRengi` var (renk teması).
 
-`Prefabs/Parcalar/` yalnızca hiçbir modülde olmayan küçük ada parçalarını tutar: `PF_Island_Top_050/100`, `PF_Island_Carcass_050` (her biri kök + `Model`).
+`Prefabs/Parcalar/` hiçbir modülde olmayan tek parçaları tutar (her biri kök + `Model`): küçük ada parçaları `PF_Island_Top_050/100`, `PF_Island_Carcass_050` sebze kasası `PF_VeggieCrate_01` (60 × 40 × 30 cm, tamamen ahşap, pivot tabanın ortası; taşınacaksa collider ve Rigidbody oyun tarafında) ve fırın tepsisi `PF_Oven_Tray_01` (pivot tabanın ortası; ocağın içinde de bir tane var).
 
 ### `AdaModulu` (`PF_Ada_200`)
 
@@ -91,6 +94,30 @@ PF_Dolap_100              MutfakModulu, MobilyaRengi   pivot: sol-arka-alt köş
 - Her kat (`Kat_1` … `Kat_4`): 150 × 35 × 10 cm ahşap raf + iki çelik tutacak (`Direk_Sol/Sag` duvarda, `Kol_Sol/Sag` rafın altında; kolun ucundaki çıkıntı rafın önünü tutar).
 - Pivot: duvar çizgisinde, rafın sol ucu, yerde. Raf duvardan 10 cm önde; toplam derinlik 54 cm.
 
+### Cihazlar (`PF_Ocak_100`, `PF_Davlumbaz_100`, `PF_Buzdolabi_100`)
+
+Seçenek bileşeni yok, kurulum parçaları sabit yerlerine koyar. Pivot: sol-arka köşe, yerde (dolaplarla aynı); davlumbazın kökü de yerde, ocakla aynı noktaya konunca tam üstüne oturur.
+
+```text
+PF_Ocak_100               MobilyaRengi
+  Govde, Ust, Serit_Alt, Serit_Orta
+  Firin_Kapagi            pivot alt kenardaki menteşede
+    Kulp
+  Dugme_Goz_Sol, Dugme_Goz_Sag   gözleri açar (çelik), pivot arka yüz ortası
+  Dugme_Firin             fırını açar (hardal)
+  Goz_Sol, Goz_Sag        boş grup, gözün ortası; içinde Taban, Kapak, Izgara
+  Firin_Izgarasi, Tepsi   fırının içinde, pivot tabanın ortası
+PF_Davlumbaz_100          MobilyaRengi
+  Govde, Baca, Filtre, Panel
+  Dugme_1, Dugme_2, Dugme_3      pivot arka yüz ortası
+PF_Buzdolabi_100          MobilyaRengi
+  Govde, Raf_1, Raf_2, Raf_3
+  Kapak_Alt, Kapak_Ust    pivot sağ kenardaki menteşede
+    Kulp
+```
+
+Buzdolabının dışı ve kapaklarının dışı tema rengini alır; içi, kapak içi ve kapak rafları trimin `BEYAZ` kutusunda, temayla değişmez. Kulplar bakır, raf telleri çelik.
+
 ### `MobilyaRengi`
 
 - `renk`: `Krem` (varsayılan), `Ahsap`, `Adacayi`, `TozluMavi`, `Hardal`, `Terrakota`. Hepsi oyun paletinden; yalnızca krem boyalı yerler değişir (gövde, kapak, çekmece kutusu); tezgah ahşabı, bakır kulp, çelik lavabo aynı kalır.
@@ -107,6 +134,9 @@ Bütün değerler **modülün kendi yerel uzayında** (kök döndürülmüşse o
 | `Kapak_Sag` | `localEulerAngles.y` 0 → **−90** | aynı |
 | `Cekmece`, `Cekmece_Alt` | `localPosition.z` artar (öne kayar) | 0,40 m güvenli (kutu 65 cm derin) |
 | `Vana_Sol`, `Vana_Sag` | `localEulerAngles.y` | serbest |
+| `Firin_Kapagi` (ocak) | `localEulerAngles.x` 0 → **+90** (üstü öne düşer) | 90° (yere paralel) |
+| `Kapak_Alt`, `Kapak_Ust` (buzdolabı) | `localEulerAngles.y` 0 → **−100** | 100°'de gövdeye değmez (Blender'da denendi) |
+| `Dugme_*` (ocak) | `localEulerAngles.z` | serbest (ön yüze dik eksen) |
 
 - Açılma yönleri (+90 / −90) mesh yönünden hesaplandı, Unity'de dönerek denenmedi; ters açılırsa işareti çevir.
 - Kulplar kapağın / çekmecenin çocuğu: onlarla birlikte hareket eder.
@@ -130,7 +160,7 @@ Assets/ART/3D/Furniture/
   Textures/T_Furniture_Trim_{Normal,MetallicSmoothness}[_Ahsap].png   (2048, trim sheet, Repeat; renkli temalar kreminkini kullanır)
   Materials/M_Furniture_Trim[_<Renk>].mat    Standard (Metallic)
   Prefabs/PF_*.prefab            modüller
-  Prefabs/Parcalar/PF_*.prefab   ada parçaları
+  Prefabs/Parcalar/PF_*.prefab   ada parçaları, sebze kasası, fırın tepsisi
   Scripts/MutfakModulu.cs, KoseModulu.cs, RafModulu.cs, AdaModulu.cs, MobilyaRengi.cs   (oyunda da çalışır)
   Editor/MobilyaKurulum.cs       menü
   Editor/MutfakModuluEditor.cs   sade inspector
@@ -138,4 +168,5 @@ Assets/ART/3D/Furniture/
 
 - Dosya adlarında sürüm eki yok; art güncellemede üzerine yazar, `.meta` korunur, referanslar kopmaz. Dosyaları taşıma ya da yeniden adlandırma.
 - Normal haritası OpenGL (Unity ile aynı). Metallerin Metallic değeri 0,6 (araçlarla aynı); mutfağa bir Reflection Probe konursa bakır ve çelik daha doğal görünür.
+- Trim sheet sürümü v06 (10 Kas 2026): ADAÇAYI kutusunun alt yarısı temadan bağımsız `BEYAZ` (buzdolabı içi). Öteki her yer v05 ile aynı.
 - Trim sheet: parçaların UV'si şeritlerin içinde ve yatayda 0–1 dışına taşar; dokular **Repeat** olmalı (Clamp olursa ahşap çizgi gibi uzar).

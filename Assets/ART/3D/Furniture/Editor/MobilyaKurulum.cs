@@ -100,9 +100,117 @@ public static class MobilyaKurulum
         KoseL(mat);
         DuvarRafi(mat);
         Ada(mat);
+        Cihazlar(mat);
 
         AssetDatabase.SaveAssets();
-        Debug.Log($"Mobilya kurulum: bitti ({fbxs.Length} parca; 5 dolap, L kose, duvar rafi, ada).");
+        Debug.Log($"Mobilya kurulum: bitti ({fbxs.Length} parca; 5 dolap, L kose, duvar rafi, ada, ocak, davlumbaz, buzdolabi).");
+    }
+
+    // ---------- cihazlar: ocak, davlumbaz, buzdolabi (10 Kas 2026) ----------
+    // Parca yerleri Blender'daki pivotlardan (metre). Prefab koku cihazin sol-arka kosesi, yerde.
+    // Kapak menteşede doner (ocak: alt kenar, X ekseni; buzdolabi: sag kenar, Y ekseni). Kulp kapagin cocugu.
+    // Renk: kokteki MobilyaRengi (krem alanlar). Buzdolabi ici BEYAZ kutuda, temayla degismez.
+
+    // (ad, mesh, Blender pivot, ebeveyn adi; null = kok)
+    struct P
+    {
+        public string ad, mesh, ebeveyn; public Vector3 b;
+        public P(string ad, string mesh, float x, float y, float z, string ebeveyn = null)
+        { this.ad = ad; this.mesh = mesh; b = new Vector3(x, y, z); this.ebeveyn = ebeveyn; }
+    }
+
+    static void Cihazlar(Material mat)
+    {
+        // Ocak: Blender'da kok (25, 0, 0). Ikinci goz soldakinin ortaya gore aynasi (x 25,7058).
+        const float gozY = -0.361f, gozZ = 0.8416f;
+        Cihaz("PF_Ocak_100", new Vector3(25f, 0f, 0f), mat, new[]
+        {
+            new P("Govde", "SM_Stove_01_Body", 25f, 0f, 0f),
+            new P("Ust", "SM_Stove_01_Top", 25f, 0f, 0f),
+            new P("Serit_Alt", "SM_Stove_01_Trim_Bottom", 25f, 0f, 0f),
+            new P("Serit_Orta", "SM_Stove_01_Trim_Middle", 25f, 0f, 0f),
+            new P("Firin_Kapagi", "SM_Stove_01_Door", 25.5f, -0.6929f, 0.1266f),
+            new P("Kulp", "SM_Stove_01_Door_Handle", 25.5f, -0.6929f, 0.1266f, "Firin_Kapagi"),
+            new P("Dugme_Goz_Sol", "SM_Stove_01_Knob_Burner_L", 25.1608f, -0.6925f, 0.6856f),
+            new P("Dugme_Goz_Sag", "SM_Stove_01_Knob_Burner_R", 25.3145f, -0.6925f, 0.6856f),
+            new P("Dugme_Firin", "SM_Stove_01_Knob_Oven", 25.7948f, -0.6925f, 0.6856f),
+            new P("Goz_Sol", null, 25.2942f, gozY, gozZ),
+            new P("Taban", "SM_Stove_01_Burner_Base", 25.2942f, gozY, gozZ, "Goz_Sol"),
+            new P("Kapak", "SM_Stove_01_Burner_Cap", 25.2942f, gozY, gozZ, "Goz_Sol"),
+            new P("Izgara", "SM_Stove_01_Burner_Grate", 25.2942f, gozY, gozZ, "Goz_Sol"),
+            new P("Goz_Sag", null, 25.7058f, gozY, gozZ),
+            new P("Taban", "SM_Stove_01_Burner_Base", 25.7058f, gozY, gozZ, "Goz_Sag"),
+            new P("Kapak", "SM_Stove_01_Burner_Cap", 25.7058f, gozY, gozZ, "Goz_Sag"),
+            new P("Izgara", "SM_Stove_01_Burner_Grate", 25.7058f, gozY, gozZ, "Goz_Sag"),
+            new P("Firin_Izgarasi", "SM_Oven_Rack_01", 25.5f, -0.3724f, 0.3155f),
+            new P("Tepsi", "SM_Oven_Tray_01", 25.5f, -0.3724f, 0.3421f),
+        });
+
+        // Davlumbaz: kok yerde (ocakla ayni hizada), govde 159 cm'den baslar.
+        Cihaz("PF_Davlumbaz_100", new Vector3(25f, 0f, 0f), mat, new[]
+        {
+            new P("Govde", "SM_Hood_01_Body", 25f, 0f, 1.5894f),
+            new P("Baca", "SM_Hood_01_Chimney", 25f, 0f, 1.5894f),
+            new P("Filtre", "SM_Hood_01_Filter", 25f, 0f, 1.5894f),
+            new P("Panel", "SM_Hood_01_Panel", 25f, 0f, 1.5894f),
+            new P("Dugme_1", "SM_Hood_01_Button_1", 25.44f, -0.6098f, 1.66f),
+            new P("Dugme_2", "SM_Hood_01_Button_2", 25.5f, -0.6098f, 1.66f),
+            new P("Dugme_3", "SM_Hood_01_Button_3", 25.56f, -0.6098f, 1.66f),
+        });
+
+        // Buzdolabi: 100 x 70 x 200 cm. Kapaklar sag kenarda menteşeli, kulplar solda.
+        const float bx = 28.9961f, mx = 29.9959f, my = -0.7058f;
+        Cihaz("PF_Buzdolabi_100", new Vector3(bx, 0f, 0f), mat, new[]
+        {
+            new P("Govde", "SM_Fridge_01_Body", bx, 0f, 0f),
+            new P("Raf_1", "SM_Fridge_01_Shelf_01", bx, 0f, 0f),
+            new P("Raf_2", "SM_Fridge_01_Shelf_02", bx, 0f, 0f),
+            new P("Raf_3", "SM_Fridge_01_Shelf_03", bx, 0f, 0f),
+            new P("Kapak_Alt", "SM_Fridge_01_Door_Bottom", mx, my, 0f),
+            new P("Kulp", "SM_Fridge_01_Handle_Bottom", mx, my, 0f, "Kapak_Alt"),
+            new P("Kapak_Ust", "SM_Fridge_01_Door_Top", mx, my, 1.2675f),
+            new P("Kulp", "SM_Fridge_01_Handle_Top", mx, my, 1.2675f, "Kapak_Ust"),
+        });
+    }
+
+    static void Cihaz(string pfName, Vector3 kok, Material mat, P[] parcalar)
+    {
+        string pfPath = $"{Root}/Prefabs/{pfName}.prefab";
+        bool exists = File.Exists(pfPath);
+        var root = exists ? PrefabUtility.LoadPrefabContents(pfPath) : new GameObject(pfName);
+        try
+        {
+            var yerler = new Dictionary<string, (Transform t, Vector3 b)>();
+            foreach (var p in parcalar)
+            {
+                var (ebT, ebB) = p.ebeveyn != null ? yerler[p.ebeveyn] : (root.transform, kok);
+                var d = p.b - ebB;
+                var pos = B(d.x, d.y, d.z);
+                Transform t;
+                if (p.mesh == null)   // bos grup (ornegin bir goz)
+                {
+                    t = ebT.Find(p.ad);
+                    if (!t) { t = new GameObject(p.ad).transform; t.SetParent(ebT, false); }
+                    t.localPosition = pos; t.localRotation = Quaternion.identity; t.localScale = Vector3.one;
+                }
+                else
+                {
+                    var go = Parca(ebT, p.ad, p.mesh, pos, mat);
+                    if (!go) continue;
+                    t = go.transform;
+                }
+                if (p.ebeveyn == null) yerler[p.ad] = (t, p.b);
+                else yerler[p.ebeveyn + "/" + p.ad] = (t, p.b);
+            }
+            RenkEkle(root);
+            PrefabUtility.SaveAsPrefabAsset(root, pfPath);
+        }
+        finally
+        {
+            if (exists) PrefabUtility.UnloadPrefabContents(root);
+            else Object.DestroyImmediate(root);
+        }
+        Debug.Log($"Mobilya kurulum: {pfName}");
     }
 
     // Tek basina prefabi yapilan parcalar (bir modulun icinde olmayanlar). Ada tezgahi ve 100'luk ada govdesi
@@ -110,6 +218,8 @@ public static class MobilyaKurulum
     static readonly string[] TekParcalar =
     {
         "SM_Island_Top_050", "SM_Island_Top_100", "SM_Island_Carcass_050",
+        "SM_VeggieCrate_01",   // sebze kasasi, tamamen ahsap; pivot tabanin ortasi
+        "SM_Oven_Tray_01",     // firin tepsisi; ocagin icinde de var, tek basina tasinabilsin diye ayrica
     };
 
     // ---------- ada (200 x 150) ----------
