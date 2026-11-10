@@ -23,7 +23,8 @@ Son güncelleme: 9 Kasım 2026 (ölçüler Aşçı'nın eline göre büyütüld�
 Assets/ART/3D/Fruit_Vegetables/
   SM_<Ad>.fbx                 bütün hal (SM_<Ad>) + dilimler (SM_<Ad>_Seg01...)
   Textures/T_Food_Atlas_BaseColor.png   sekiz yiyeceğin ortak dokusu (2048)
-  Materials/M_Food_Atlas.mat  tek malzeme (Standard, parlama yok)
+  Textures/T_Food_Atlas_BaseColor_Cooked.png, _Burnt.png   pişmiş ve yanmış durum (aynı UV)
+  Materials/M_Food_Atlas.mat  normal (Standard, parlama yok); M_Food_Atlas_Cooked.mat, M_Food_Atlas_Burnt.mat aynı ayarla
   Prefabs/PF_<Ad>.prefab
   Editor/YiyecekKurulum.cs    menü: Dishaster > Art > Yiyecekleri kur
 ```
@@ -43,3 +44,11 @@ PF_Carrot_01        kök; pivot bütün halin tabanının ortasında
 - Her dilimin pivotu kendi ortasında ve kesildiği yerde durur. `Whole` kapatılıp `Slices` açılınca aynı yiyecek dilimlenmiş görünür; dilimler sonra tek tek alınabilir.
 - Ölçek metre. Collider, Rigidbody ve kesme davranışı yok; oyun tarafı ekler. Dilimler küçük ve basit, convex MeshCollider uygun.
 - Hepsi tek malzeme ve tek doku kullanır (tek draw call grubu, batching'e uygun).
+
+## Pişmiş ve yanmış (10 Kas 2026)
+
+Her yiyeceğin üç durumu var: normal, pişmiş, yanmış. Mesh ve UV aynı, yalnızca malzeme değişir:
+`M_Food_Atlas` (normal), `M_Food_Atlas_Cooked`, `M_Food_Atlas_Burnt`. Prefablar normal malzemeyle gelir; pişince ya da
+yanınca dilimin (ya da bütün halin) `MeshRenderer.sharedMaterial`'ı bu ikisinden birine çevrilir. Sotelenmiş mantar ve
+biber = pişmiş. Tost tabanı = pişmiş malzemeli ekmek dilimi. Siyah-beyaz gören Aşçı için durumlar açıklıktan da ayrılır
+(ortalama açıklık normal 156, pişmiş 121, yanmış 57).
