@@ -6,7 +6,7 @@ namespace Dishaster.EditorTools
 {
     /// <summary>
     /// Süs ve efekt: KitchenFx prefab'ı (meyve suyu, sıçrama, konfeti parçacıkları + kodla üretilen sesler + kamera
-    /// renk efekti malzemesi) Game sahnesine; duvar ve zemin malzemeleri karo shader'ına (Dishaster/Tiles) geçiyor.
+    /// renk efekti malzemesi) Game sahnesine. Oda art'ın parçalarıyla (KitchenInstaller); eski karo shader'ı kalktı.
     /// Version değişince kendiliğinden yeniden kurar.
     /// </summary>
     [InitializeOnLoad]
@@ -18,7 +18,6 @@ namespace Dishaster.EditorTools
         const string MaterialFolder = "Assets/_Dishaster/Materials";
         const string ParticleMaterialPath = MaterialFolder + "/M_Particle.mat";
         const string GradeMaterialPath = MaterialFolder + "/M_Grade.mat";
-        const string TilesShaderPath = "Assets/_Dishaster/Shaders/Tiles.shader";
         const string GradeShaderPath = "Assets/_Dishaster/Shaders/Grade.shader";
 
         static FxInstaller()
@@ -41,7 +40,6 @@ namespace Dishaster.EditorTools
         [MenuItem("Tools/Dishaster/13 Install Fx", priority = 13)]
         static void Install()
         {
-            ApplyTiles();
             BuildPrefab();
             if (GameScenePrefabs.EnsurePlaced(PrefabPath, Vector3.zero, Quaternion.identity, true))
                 File.WriteAllText(VersionFile, Version);
@@ -52,35 +50,6 @@ namespace Dishaster.EditorTools
         {
             if (!File.Exists(PrefabPath)) BuildPrefab();
             return GameScenePrefabs.EnsurePlaced(PrefabPath, Vector3.zero, Quaternion.identity);
-        }
-
-        // ── KARO ────────────────────────────────────────────────────────────
-
-        static void ApplyTiles()
-        {
-            var tiles = AssetDatabase.LoadAssetAtPath<Shader>(TilesShaderPath);
-            if (tiles == null) return;
-
-            // Duvar: küçük, krem metro karosu.
-            SetTiles("M_Wall", tiles, new Color(0.93f, 0.9f, 0.84f), new Color(0.9f, 0.87f, 0.8f), new Color(0.7f, 0.67f, 0.62f), 0.15f, 0.004f, 0f, 0.55f);
-            // Zemin: büyük, sıcak dama.
-            SetTiles("M_Floor", tiles, new Color(0.62f, 0.5f, 0.4f), new Color(0.82f, 0.74f, 0.62f), new Color(0.35f, 0.3f, 0.26f), 0.5f, 0.008f, 1f, 0.3f);
-        }
-
-        static void SetTiles(string name, Shader shader, Color color, Color alt, Color grout, float size, float groutWidth, float checker, float gloss)
-        {
-            var material = AssetDatabase.LoadAssetAtPath<Material>($"{MaterialFolder}/{name}.mat");
-            if (material == null) return;
-
-            material.shader = shader;
-            material.SetColor("_Color", color);
-            material.SetColor("_AltColor", alt);
-            material.SetColor("_GroutColor", grout);
-            material.SetFloat("_TileSize", size);
-            material.SetFloat("_GroutWidth", groutWidth);
-            material.SetFloat("_Checker", checker);
-            material.SetFloat("_Glossiness", gloss);
-            EditorUtility.SetDirty(material);
         }
 
         // ── EFEKT ───────────────────────────────────────────────────────────

@@ -1,41 +1,24 @@
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
+using static Dishaster.EditorTools.KitchenLayout;
 
 namespace Dishaster.EditorTools
 {
     /// <summary>
-    /// Fridge prefab'ı: doğu duvarında, kapağı açılıp kapanan buzdolabı. İçinde süt kutuları, yumurtalar ve
-    /// çilekler. Game sahnesine koyar; Version değişince kendiliğinden yeniden kurar.
+    /// Fridge prefab'ı: art'ın buzdolabı (PF_Buzdolabi_100) arka duvarın sol ucunda; iki kapağı (sağdan menteşeli)
+    /// görmeyenin eliyle açılıp kapanıyor (KitchenDoor). Raflarda art'ın süt kutuları, çilekler ve peynir. Gövdenin
+    /// içi oyuk (el raflara değiyor), raf yükseklikleri mesh'ten. Game sahnesine koyar; Version değişince
+    /// kendiliğinden yeniden kurar.
     /// </summary>
     [InitializeOnLoad]
     public static class FridgeInstaller
     {
-        const string Version = "2";
+        const string Version = "3";
         const string VersionFile = "ProjectSettings/DishasterFridge.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/Fridge.prefab";
-
-        // Doğu duvarı x=9; önü odaya (batıya) bakıyor. Tahta bariyerinin (z=2.5) güneyinde, görmeyen ulaşabiliyor.
-        static readonly Vector3 Position = new Vector3(8.62f, 0f, -2f);
-        static readonly Quaternion Rotation = Quaternion.Euler(0f, -90f, 0f);
-
-        // Yerel: önü +z.
-        const float Width = 0.75f;
-        const float Depth = 0.7f;
-        const float Height = 1.8f;
-        const float Wall = 0.04f;
-        const float Plinth = 0.1f;
-        const float DoorThickness = 0.05f;
-        static readonly float[] ShelfHeights = { 0.5f, 0.95f, 1.4f };
-
-        static readonly PantryInstaller.Food Strawberry = new PantryInstaller.Food
-        {
-            name = "Strawberry", peel = new Color(0.82f, 0.10f, 0.12f), flesh = new Color(0.95f, 0.55f, 0.55f),
-            length = 0.045f, radius = 0.019f, slices = 4,
-            stem = new Color(0.20f, 0.45f, 0.15f),
-            profile = t => PantryInstaller.Round(t) * (0.5f + 0.5f * t),
-            sliceIngredient = Ingredient.Strawberry,
-        };
+        const float Width = 1f;
 
         static FridgeInstaller()
         {
@@ -57,115 +40,143 @@ namespace Dishaster.EditorTools
         [MenuItem("Tools/Dishaster/7 Install Fridge", priority = 7)]
         static void Install()
         {
-            BuildPrefab();
-            if (GameScenePrefabs.EnsurePlaced(PrefabPath, Position, Rotation, true))
+            if (!BuildPrefab(out Vector3 position, out Quaternion rotation)) return;
+            if (GameScenePrefabs.EnsurePlaced(PrefabPath, position, rotation, true))
                 File.WriteAllText(VersionFile, Version);
         }
 
         /// <summary>Game sahnesinde yoksa ekler. Sahne kurucu Game'i yeniden yaratınca da çağırıyor.</summary>
         public static bool PlaceInGameScene()
         {
-            if (!File.Exists(PrefabPath)) BuildPrefab();
-            return GameScenePrefabs.EnsurePlaced(PrefabPath, Position, Rotation);
+            if (!BuildPrefab(out Vector3 position, out Quaternion rotation, onlyIfMissing: true)) return false;
+            return GameScenePrefabs.EnsurePlaced(PrefabPath, position, rotation);
         }
 
-        static void BuildPrefab()
+        /// <summary>Kök art'ın pivotunda; yer ve dönüş arka duvarın çerçevesinden (uzanma yönü ölçülüyor).</summary>
+        static bool BuildPrefab(out Vector3 position, out Quaternion rotation, bool onlyIfMissing = false)
         {
+            position = Vector3.zero;
+            rotation = Quaternion.identity;
+
+            GameObject art = Art(FurnitureArt + "PF_Buzdolabi_100");
+            if (art == null) return false;
+
+            var scratch = new GameObject("FridgeScratch");
+            GameObject probe = PlaceAlong(scratch.transform, art, Frame(Side.North), FridgeCursor, Width);
+            position = probe.transform.position;
+            rotation = probe.transform.rotation;
+            Object.DestroyImmediate(scratch);
+
+            if (onlyIfMissing && File.Exists(PrefabPath)) return true;
+
             Directory.CreateDirectory(KitchenCounterInstaller.ItemsFolder);
 
             var root = new GameObject("Fridge");
-            Material shell = DishasterSceneBuilder.GetMaterial("M_Fridge", new Color(0.90f, 0.91f, 0.92f));
-            Material inside = DishasterSceneBuilder.GetMaterial("M_FridgeInside", new Color(0.96f, 0.97f, 0.98f));
+            GameObject body = Instantiate(art, root.transform);
+            body.name = "Body";
+            Paint(body, MobilyaRengi.Renk.Krem);
 
-            // Gövde parçaları katı: oyuncu içinden geçmiyor, el ışını raflara değiyor.
-            AddSolid(root.transform, "Back", new Vector3(0f, Height / 2f, -Depth / 2f + Wall / 2f), new Vector3(Width, Height, Wall), shell);
-            AddSolid(root.transform, "SideLeft", new Vector3(-Width / 2f + Wall / 2f, Height / 2f, 0f), new Vector3(Wall, Height, Depth), shell);
-            AddSolid(root.transform, "SideRight", new Vector3(Width / 2f - Wall / 2f, Height / 2f, 0f), new Vector3(Wall, Height, Depth), shell);
-            AddSolid(root.transform, "Top", new Vector3(0f, Height - Wall / 2f, 0f), new Vector3(Width, Wall, Depth), shell);
-            AddSolid(root.transform, "Bottom", new Vector3(0f, Plinth / 2f, 0f), new Vector3(Width, Plinth, Depth), shell);
+            // Kapaklar: menteşe kapağın kendi pivotunda (sağ kenar), 0 → -100° (MOBILYA.md).
+            var doors = new List<Transform>();
+            foreach (string doorName in new[] { "Kapak_Alt", "Kapak_Ust" })
+            {
+                Transform door = body.transform.Find(doorName);
+                if (door == null) continue;
 
-            Vector3 shelfSize = new Vector3(Width - Wall * 2f, 0.02f, Depth - Wall - 0.02f);
-            for (int i = 0; i < ShelfHeights.Length; i++)
-                AddSolid(root.transform, "Shelf" + (i + 1), new Vector3(0f, ShelfHeights[i] - 0.01f, Wall / 2f - 0.01f), shelfSize, inside);
+                var panel = door.gameObject.AddComponent<BoxCollider>();
+                Bounds bounds = MeshBounds(door, door);
+                panel.center = bounds.center;
+                panel.size = bounds.size;
 
-            BuildDoor(root.transform, shell);
-            FillShelves(root.transform);
+                var kitchenDoor = door.gameObject.AddComponent<KitchenDoor>();
+                kitchenDoor.hinge = door;
+                kitchenDoor.panel = panel;
+                kitchenDoor.openAngle = -100f;
+                doors.Add(door);
+            }
+
+            // Gövde ve raflar kendi şekilleriyle: içi oyuk, el raflara değiyor, oyuncu içinden geçmiyor.
+            foreach (Transform part in body.transform)
+                if (!doors.Contains(part))
+                    AddMeshColliders(part.gameObject);
+
+            Outline(body, LowVisionOutlineType.Table);
+
+            // İçi aydınlık: kapak açılınca raflar görünsün.
+            var light = new GameObject("InsideLight").AddComponent<Light>();
+            light.transform.SetParent(root.transform, false);
+            Bounds whole = MeshBounds(body.transform, root.transform);
+            light.transform.localPosition = new Vector3(whole.center.x, whole.max.y - 0.35f, whole.center.z + 0.1f);
+            light.type = LightType.Point;
+            light.range = 1.2f;
+            light.intensity = 0.7f;
+            light.color = new Color(0.92f, 0.96f, 1f);
+            light.shadows = LightShadows.None;
+
+            FillShelves(root.transform, body);
 
             PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
             Object.DestroyImmediate(root);
+            return true;
         }
 
-        // Menteşe sağda (önden bakınca), kapak dışa açılıyor.
-        static void BuildDoor(Transform parent, Material shell)
+        // Raflar alttan üste: alt rafta çilekler, ortada süt kutuları, üstte peynir. Yükseklik rafın üst yüzü.
+        static void FillShelves(Transform root, GameObject body)
         {
-            var hinge = new GameObject("DoorHinge");
-            hinge.transform.SetParent(parent, false);
-            hinge.transform.localPosition = new Vector3(-Width / 2f, 0f, Depth / 2f);
+            var shelves = new List<Bounds>();
+            foreach (string shelfName in new[] { "Raf_1", "Raf_2", "Raf_3" })
+            {
+                Transform shelf = body.transform.Find(shelfName);
+                if (shelf != null) shelves.Add(MeshBounds(shelf, root));
+            }
 
-            GameObject panel = AddSolid(hinge.transform, "Door", new Vector3(Width / 2f, Height / 2f, DoorThickness / 2f), new Vector3(Width, Height, DoorThickness), shell);
-            KitchenCounterInstaller.AddPart(hinge.transform, PrimitiveType.Cube, "Handle", new Vector3(Width - 0.06f, 1.1f, DoorThickness + 0.025f), new Vector3(0.025f, 0.32f, 0.03f), DishasterSceneBuilder.GetMaterial("M_FridgeHandle", new Color(0.35f, 0.36f, 0.38f)));
+            if (shelves.Count == 0)
+            {
+                Debug.LogWarning("[Dishaster] Buzdolabında raf bulunamadı (Raf_1..3); eşyalar konmadı.");
+                return;
+            }
 
-            var door = hinge.AddComponent<KitchenDoor>();
-            door.hinge = hinge.transform;
-            door.panel = panel.GetComponent<Collider>();
-            door.openAngle = -100f;
-        }
+            shelves.Sort((a, b) => a.max.y.CompareTo(b.max.y));
+            Bounds bottom = shelves[0];
+            Bounds middle = shelves[Mathf.Min(1, shelves.Count - 1)];
+            Bounds top = shelves[shelves.Count - 1];
 
-        static void FillShelves(Transform parent)
-        {
-            // Orta raf: iki süt kutusu.
+            // Süt: ortada iki kutu.
             GameObject milk = BuildMilkCarton();
-            KitchenCounterInstaller.PlaceItem(parent, milk, new Vector3(-0.15f, ShelfHeights[1], 0.08f), 0f);
-            KitchenCounterInstaller.PlaceItem(parent, milk, new Vector3(0.05f, ShelfHeights[1], 0.08f), 0f);
+            if (milk != null)
+            {
+                for (int i = 0; i < 2; i++)
+                    KitchenCounterInstaller.PlaceItem(root, milk, OnShelf(middle, -0.2f + 0.4f * i, 0f), 0f);
+            }
 
-            // Alt raf: solda yumurta kabı (2x3), sağda çilek kutusu.
-            float shelf = ShelfHeights[0];
-            KitchenCounterInstaller.AddPart(parent, PrimitiveType.Cube, "EggTray", new Vector3(-0.17f, shelf + 0.01f, 0.05f), new Vector3(0.13f, 0.02f, 0.19f), DishasterSceneBuilder.GetMaterial("M_EggTray", new Color(0.70f, 0.62f, 0.50f)));
-            GameObject egg = BuildEgg();
-            for (int i = 0; i < 6; i++)
-                KitchenCounterInstaller.PlaceItem(parent, egg, new Vector3(-0.2f + 0.06f * (i % 2), shelf + 0.02f, -0.01f + 0.06f * (i / 2)), 0f);
+            // Çilek: altta altı tane, iki sıra.
+            GameObject strawberry = FoodShowcaseInstaller.FoodItem("PF_Strawberry_01");
+            if (strawberry != null)
+            {
+                for (int i = 0; i < 6; i++)
+                    KitchenCounterInstaller.PlaceItem(root, strawberry, OnShelf(bottom, -0.3f + 0.3f * (i % 3), i < 3 ? -0.2f : 0.15f), 35f * i);
+            }
 
-            Material box = DishasterSceneBuilder.GetMaterial("M_BerryBox", new Color(0.30f, 0.55f, 0.35f));
-            KitchenCounterInstaller.AddPart(parent, PrimitiveType.Cube, "BerryBoxFloor", new Vector3(0.15f, shelf + 0.005f, 0.05f), new Vector3(0.22f, 0.01f, 0.18f), box);
-            KitchenCounterInstaller.AddPart(parent, PrimitiveType.Cube, "BerryBoxFront", new Vector3(0.15f, shelf + 0.025f, 0.14f), new Vector3(0.22f, 0.04f, 0.008f), box);
-            KitchenCounterInstaller.AddPart(parent, PrimitiveType.Cube, "BerryBoxBack", new Vector3(0.15f, shelf + 0.025f, -0.04f), new Vector3(0.22f, 0.04f, 0.008f), box);
+            GameObject cheese = FoodShowcaseInstaller.FoodItem("PF_Cheese_Block_01");
+            if (cheese != null && top.max.y > middle.max.y + 0.05f)
+                KitchenCounterInstaller.PlaceItem(root, cheese, OnShelf(top, 0f, 0f), 10f);
+        }
 
-            GameObject strawberry = PantryInstaller.BuildFood(Strawberry);
-            for (int i = 0; i < 6; i++)
-                KitchenCounterInstaller.PlaceItem(parent, strawberry, new Vector3(0.08f + 0.07f * (i % 3), shelf + 0.01f, 0.01f + 0.08f * (i / 3)), 30f * i);
+        // Rafın üstünde bir nokta: x ve z rafın yarı genişliği/derinliği oranında (-0.5..0.5).
+        static Vector3 OnShelf(Bounds shelf, float x, float z)
+        {
+            return new Vector3(shelf.center.x + shelf.size.x * x, shelf.max.y + 0.002f, shelf.center.z + shelf.size.z * z);
         }
 
         static GameObject BuildMilkCarton()
         {
-            var root = new GameObject("MilkCarton");
-            Material carton = DishasterSceneBuilder.GetMaterial("M_MilkCarton", new Color(0.95f, 0.95f, 0.97f));
-            KitchenCounterInstaller.AddPart(root.transform, PrimitiveType.Cube, "Body", new Vector3(0f, 0.1f, 0f), new Vector3(0.075f, 0.2f, 0.075f), carton);
-            KitchenCounterInstaller.AddPart(root.transform, PrimitiveType.Cube, "Label", new Vector3(0f, 0.1f, 0.038f), new Vector3(0.06f, 0.08f, 0.002f), DishasterSceneBuilder.GetMaterial("M_MilkLabel", new Color(0.25f, 0.45f, 0.80f)));
-            Transform gable = KitchenCounterInstaller.AddPart(root.transform, PrimitiveType.Cube, "Gable", new Vector3(0f, 0.215f, 0f), new Vector3(0.053f, 0.053f, 0.075f), carton);
-            gable.localRotation = Quaternion.Euler(0f, 0f, 45f);
-            return KitchenCounterInstaller.SaveSourceItem(root, Ingredient.Milk, 1000f, 150f, 0.08f, 0.24f, 0.04f);
-        }
+            GameObject art = Art(PantryArt + "PF_MilkCarton_01");
+            if (art == null) return null;
 
-        static GameObject BuildEgg()
-        {
-            var root = new GameObject("Egg");
-            KitchenCounterInstaller.AddPart(root.transform, PrimitiveType.Sphere, "Shell", new Vector3(0f, 0.03f, 0f), new Vector3(0.045f, 0.06f, 0.045f), DishasterSceneBuilder.GetMaterial("M_Egg", new Color(0.93f, 0.86f, 0.74f)));
-
-            var ingredient = root.AddComponent<KitchenIngredientItem>();
-            ingredient.ingredient = Ingredient.Egg;
-            ingredient.amount = 1f;
-            return KitchenCounterInstaller.SaveItem(root, KitchenItemKind.Generic, 0.05f, 0.06f, 0.03f);
-        }
-
-        static GameObject AddSolid(Transform parent, string name, Vector3 position, Vector3 scale, Material material)
-        {
-            GameObject block = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            block.name = name;
-            block.transform.SetParent(parent, false);
-            block.transform.localPosition = position;
-            block.transform.localScale = scale;
-            block.GetComponent<Renderer>().sharedMaterial = material;
-            return block;
+            GameObject root = WrapOnBase("MilkCarton", art, Quaternion.identity);
+            Bounds bounds = MeshBounds(root.transform, root.transform);
+            float radius = Mathf.Max(bounds.extents.x, bounds.extents.z);
+            return KitchenCounterInstaller.SaveSourceItem(root, Ingredient.Milk, 1000f, 150f, radius + 0.03f, bounds.size.y, radius + 0.02f);
         }
     }
 }

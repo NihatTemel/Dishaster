@@ -7,31 +7,31 @@ using UnityEngine;
 namespace Dishaster.EditorTools
 {
     /// <summary>
-    /// Mutfak eşyası prefab'larını, onları taşıyan Counter prefab'ını oluşturur ve Game sahnesine koyar.
-    /// Version değişince kendiliğinden yeniden kurar. Eşyaların origin'i tabanında, böylece bir yüzeye koymak
-    /// için y'si yüzey yüksekliği olması yetiyor. Ürünler kilerde (bkz. PantryInstaller).
+    /// Counter prefab'ı: iş tezgahı art'ın adası (PF_Ada_200, 2 x 1,5 m, önü oyunculara), üstünde art'ın kesme
+    /// tahtası, bıçağı, karıştırma kasesi, ekmek ve 1 L ölçü bardağı. Eşya prefab'larını kurar, Game sahnesine koyar;
+    /// Version değişince kendiliğinden yeniden kurar. Eşyaların origin'i tabanında, böylece bir yüzeye koymak için
+    /// y'si yüzey yüksekliği olması yetiyor. Tezgah ve tahta yükseklikleri mesh'ten ölçülüyor.
     /// </summary>
     [InitializeOnLoad]
     public static class KitchenCounterInstaller
     {
-        const string Version = "5";
+        const string Version = "6";
         const string VersionFile = "ProjectSettings/DishasterKitchenCounter.version";
         const string OldTablePath = "Assets/_Dishaster/Prefabs/Table.prefab";
         const string CounterPath = "Assets/_Dishaster/Prefabs/Counter.prefab";
         internal const string ItemsFolder = "Assets/_Dishaster/Prefabs/Items";
         const string OldCupPath = ItemsFolder + "/Cup.prefab";
-        const string MeshFolder = "Assets/_Dishaster/Meshes";
         const string GlassShaderPath = "Assets/_Dishaster/Shaders/Glass.shader";
 
-        const float CounterWidth = 1.8f;
-        const float CounterDepth = 0.9f;
-        const float CounterHeight = 0.8f;
-        const float TopThickness = 0.05f;
-        const float CabinetInset = 0.03f;
+        // Adanın üstünde (kökü adanın ortası; -z oyuncular tarafı). Tahta öne-sağa, kase ve bardak sola.
+        static readonly Vector2 BoardSpot = new Vector2(0.32f, -0.3f);
+        static readonly Vector2 CupSpot = new Vector2(-0.78f, -0.38f);
+        static readonly Vector2 BowlSpot = new Vector2(-0.4f, -0.2f);
+        static readonly Vector2 KnifeSpot = new Vector2(0.32f, 0.2f);
+        static readonly Vector2 BreadSpot = new Vector2(-0.45f, 0.38f);
 
-        static readonly Vector2 BoardSize = new Vector2(0.5f, 0.3f);
-        const float BoardHeight = 0.02f;
-        const float BoardZ = -0.2f;
+        // Art'ın aletleri gerçeğin ~1,5 katı (ARACLAR.md): ölçü bardağı da aynı ölçekte, 1 L yine 1 L.
+        const float CupScale = 1.5f;
 
         // Trigger olduğu için oyuncuyu durdurmuyor; el ışını için. İnce eşyalarda da tutulabilsin.
         const float MinColliderSize = 0.03f;
@@ -60,12 +60,13 @@ namespace Dishaster.EditorTools
             if (File.Exists(OldTablePath) && !File.Exists(CounterPath))
                 AssetDatabase.MoveAsset(OldTablePath, CounterPath);
 
-            BuildCounterPrefab();
+            bool built = BuildCounterPrefab();
 
             // Kahve fincanının yerini 1 L'lik ölçü bardağı aldı.
             if (File.Exists(OldCupPath)) AssetDatabase.DeleteAsset(OldCupPath);
 
-            if (GameScenePrefabs.EnsurePlaced(CounterPath, Vector3.zero, Quaternion.identity, true))
+            if (!built) return;
+            if (GameScenePrefabs.EnsurePlaced(CounterPath, KitchenLayout.IslandCenter, Quaternion.identity, true))
                 File.WriteAllText(VersionFile, Version);
         }
 
@@ -73,50 +74,71 @@ namespace Dishaster.EditorTools
         public static bool PlaceInGameScene()
         {
             if (!File.Exists(CounterPath)) BuildCounterPrefab();
-            return GameScenePrefabs.EnsurePlaced(CounterPath, Vector3.zero, Quaternion.identity);
+            return GameScenePrefabs.EnsurePlaced(CounterPath, KitchenLayout.IslandCenter, Quaternion.identity);
         }
 
         // ── TEZGAH ──────────────────────────────────────────────────────────
 
-        static void BuildCounterPrefab()
+        static bool BuildCounterPrefab()
         {
+            GameObject island = KitchenLayout.Art(KitchenLayout.FurnitureArt + "PF_Ada_200");
+            GameObject boardArt = KitchenLayout.Art(KitchenLayout.ToolsArt + "PF_CuttingBoard_01");
+            if (island == null || boardArt == null)
+            {
+                Debug.LogWarning("[Dishaster] Tezgah kurulamadı: ada ya da kesme tahtası art'ı yok.");
+                return false;
+            }
+
             Directory.CreateDirectory(ItemsFolder);
             AssetDatabase.Refresh();
 
             var root = new GameObject("Counter");
 
-            // Oyuncu tezgahın içinden geçmesin diye tek kutu.
+            // Ada: önü (dolaplı sıra) oyunculara (-z), ortası kökte.
+            GameObject body = KitchenLayout.Instantiate(island, root.transform);
+            body.name = "Island";
+            body.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            Bounds bounds = KitchenLayout.MeshBounds(body.transform, root.transform);
+            body.transform.localPosition = new Vector3(-bounds.center.x, -bounds.min.y, -bounds.center.z);
+            KitchenLayout.Paint(body, MobilyaRengi.Renk.Adacayi);
+            bounds = KitchenLayout.MeshBounds(body.transform, root.transform);
+
+            // Oyuncu adanın içinden geçmesin diye tek kutu; görmeyen gövdenin hatlarını uzaktan görüyor.
             var collider = root.AddComponent<BoxCollider>();
-            collider.center = new Vector3(0f, CounterHeight / 2f, 0f);
-            collider.size = new Vector3(CounterWidth, CounterHeight, CounterDepth);
+            collider.center = bounds.center;
+            collider.size = bounds.size;
+            KitchenLayout.Outline(body, LowVisionOutlineType.Table);
 
-            Material stone = DishasterSceneBuilder.GetMaterial("M_Worktop", new Color(0.72f, 0.71f, 0.68f));
-            Material cabinet = DishasterSceneBuilder.GetMaterial("M_Cabinet", new Color(0.42f, 0.40f, 0.38f));
+            float top = KitchenLayout.SurfaceBelow(body, root.transform.position + Vector3.up * 2f, 3f, out Vector3 surface)
+                ? surface.y - root.transform.position.y
+                : bounds.max.y;
 
-            float cabinetHeight = CounterHeight - TopThickness;
-            AddPart(root.transform, PrimitiveType.Cube, "Top", new Vector3(0f, CounterHeight - TopThickness / 2f, 0f), new Vector3(CounterWidth, TopThickness, CounterDepth), stone);
-            AddPart(root.transform, PrimitiveType.Cube, "Cabinet", new Vector3(0f, cabinetHeight / 2f, 0f), new Vector3(CounterWidth - CabinetInset * 2f, cabinetHeight, CounterDepth - CabinetInset * 2f), cabinet);
-
+            // Kesme tahtası: tabanı tezgahta, üst yüzü kesilen yer.
             var board = new GameObject("CuttingBoard");
             board.transform.SetParent(root.transform, false);
-            board.transform.localPosition = new Vector3(0f, CounterHeight, BoardZ);
-            AddPart(board.transform, PrimitiveType.Cube, "Wood", new Vector3(0f, BoardHeight / 2f, 0f), new Vector3(BoardSize.x, BoardHeight, BoardSize.y), DishasterSceneBuilder.GetMaterial("M_CuttingBoard", new Color(0.50f, 0.33f, 0.18f)));
+            board.transform.localPosition = new Vector3(BoardSpot.x, top, BoardSpot.y);
+            GameObject boardModel = KitchenLayout.Instantiate(boardArt, board.transform);
+            Bounds boardBounds = KitchenLayout.MeshBounds(boardModel.transform, board.transform);
+            boardModel.transform.localPosition = new Vector3(-boardBounds.center.x, -boardBounds.min.y, -boardBounds.center.z);
+            boardBounds = KitchenLayout.MeshBounds(boardModel.transform, board.transform);
 
             var counter = root.AddComponent<KitchenCounter>();
-            LowVisionOutlineInstaller.MarkCounter(root);
-            counter.topHeight = CounterHeight;
-            counter.topSize = new Vector2(CounterWidth, CounterDepth);
+            counter.topHeight = top;
+            counter.topSize = new Vector2(bounds.size.x - 0.04f, bounds.size.z - 0.04f);
             counter.cuttingBoard = board.transform;
-            counter.boardSize = BoardSize;
-            counter.boardHeight = BoardHeight;
+            counter.boardSize = new Vector2(boardBounds.size.x, boardBounds.size.z);
+            counter.boardHeight = boardBounds.max.y;
 
-            PlaceItem(root.transform, BuildMeasuringCup(), new Vector3(-0.62f, CounterHeight, 0.25f), 0f);
-            PlaceItem(root.transform, BuildBowl(), new Vector3(-0.5f, CounterHeight, -0.15f), 0f);
-            PlaceItem(root.transform, BuildKnife(), new Vector3(0.62f, CounterHeight, 0.18f), 60f);
-            PlaceItem(root.transform, BuildSaltShaker(), new Vector3(0.66f, CounterHeight, -0.22f), 0f);
+            PlaceItem(root.transform, BuildMeasuringCup(), new Vector3(CupSpot.x, top, CupSpot.y), 30f);
+            PlaceItem(root.transform, BuildBowl(), new Vector3(BowlSpot.x, top, BowlSpot.y), 0f);
+            GameObject knife = BuildKnife();
+            if (knife != null) PlaceItem(root.transform, knife, new Vector3(KnifeSpot.x, top, KnifeSpot.y), 90f);
+            GameObject bread = FoodShowcaseInstaller.FoodItem("PF_Bread_Loaf_01");
+            if (bread != null) PlaceItem(root.transform, bread, new Vector3(BreadSpot.x, top, BreadSpot.y), 15f);
 
             PrefabUtility.SaveAsPrefabAsset(root, CounterPath);
             Object.DestroyImmediate(root);
+            return true;
         }
 
         internal static void PlaceItem(Transform parent, GameObject itemPrefab, Vector3 position, float yaw)
@@ -128,16 +150,19 @@ namespace Dishaster.EditorTools
 
         // ── EŞYALAR ─────────────────────────────────────────────────────────
 
-        // 1 L: iç çapı 11 cm, yüksekliği 11 cm. Cam saydam, diğerleri seviyeyi dışarıdan görüyor.
+        // 1 L (art ölçeğinde 1,5 kat: iç çapı 16,5 cm). Cam saydam, diğerleri seviyeyi dışarıdan görüyor.
         static GameObject BuildMeasuringCup()
         {
+            const float S = CupScale;
             var root = new GameObject("MeasuringCup");
             Material plastic = DishasterSceneBuilder.GetMaterial("M_CupHandle", new Color(0.30f, 0.32f, 0.36f));
 
-            AddPart(root.transform, PrimitiveType.Cylinder, "Glass", new Vector3(0f, 0.062f, 0f), new Vector3(0.12f, 0.058f, 0.12f), GetGlassMaterial());
-            AddPart(root.transform, PrimitiveType.Cylinder, "Base", new Vector3(0f, 0.003f, 0f), new Vector3(0.124f, 0.003f, 0.124f), plastic);
-            AddPart(root.transform, PrimitiveType.Cube, "Handle", new Vector3(0.075f, 0.07f, 0f), new Vector3(0.02f, 0.08f, 0.016f), plastic);
-            Transform fill = AddPart(root.transform, PrimitiveType.Cylinder, "Fill", new Vector3(0f, 0.06f, 0f), new Vector3(0.11f, 0.055f, 0.11f), FillMaterial());
+            AddPart(root.transform, PrimitiveType.Cylinder, "Glass", new Vector3(0f, 0.062f, 0f) * S, new Vector3(0.12f, 0.058f, 0.12f) * S, GetGlassMaterial());
+            AddPart(root.transform, PrimitiveType.Cylinder, "Base", new Vector3(0f, 0.003f, 0f) * S, new Vector3(0.124f, 0.003f, 0.124f) * S, plastic);
+            AddPart(root.transform, PrimitiveType.Cube, "Handle", new Vector3(0.075f, 0.07f, 0f) * S, new Vector3(0.02f, 0.08f, 0.016f) * S, plastic);
+            AddPart(root.transform, PrimitiveType.Cube, "HandleTop", new Vector3(0.068f, 0.108f, 0f) * S, new Vector3(0.016f, 0.008f, 0.016f) * S, plastic);
+            AddPart(root.transform, PrimitiveType.Cube, "HandleBottom", new Vector3(0.068f, 0.032f, 0f) * S, new Vector3(0.016f, 0.008f, 0.016f) * S, plastic);
+            Transform fill = AddPart(root.transform, PrimitiveType.Cylinder, "Fill", new Vector3(0f, 0.06f, 0f) * S, new Vector3(0.11f, 0.055f, 0.11f) * S, FillMaterial());
 
             AddCupMarks(root.transform, CupFillBottom, CupFillTop, 1000f);
 
@@ -146,15 +171,15 @@ namespace Dishaster.EditorTools
             container.fill = fill;
             container.fillBottom = CupFillBottom;
             container.fillTop = CupFillTop;
-            container.fillRadiusBottom = 0.054f;
-            container.fillRadiusTop = 0.054f;
+            container.fillRadiusBottom = 0.054f * S;
+            container.fillRadiusTop = 0.054f * S;
 
-            return SaveItem(root, KitchenItemKind.Generic, 0.1f, 0.12f, 0.06f);
+            return SaveItem(root, KitchenItemKind.Generic, 0.1f * S, 0.12f * S, 0.06f * S);
         }
 
-        const float CupFillBottom = 0.006f;
-        const float CupFillTop = 0.116f;
-        const float CupMarkRadius = 0.0606f;
+        const float CupFillBottom = 0.006f * CupScale;
+        const float CupFillTop = 0.116f * CupScale;
+        const float CupMarkRadius = 0.0606f * CupScale;
 
         // Camın çevresinde üç sütun (her yönden biri okunuyor): her 100 ml'de koyu çizgi ve rakam, 500 ve 1000'de uzun çizgi.
         // Seviye içerikle aynı ölçekte (fillBottom..fillTop = 0..kapasite), çizgiyle dolum tam denk geliyor.
@@ -170,9 +195,9 @@ namespace Dishaster.EditorTools
                 for (int ml = 100; ml <= capacity; ml += 100)
                 {
                     float y = bottom + (top - bottom) * ml / capacity;
-                    float length = ml % 500 == 0 ? 0.03f : 0.018f;
+                    float length = (ml % 500 == 0 ? 0.03f : 0.018f) * CupScale;
 
-                    Transform tick = AddPart(parent, PrimitiveType.Cube, $"Mark{column}_{ml}", OnGlass(column, y), new Vector3(length, 0.0026f, 0.0015f), mark);
+                    Transform tick = AddPart(parent, PrimitiveType.Cube, $"Mark{column}_{ml}", OnGlass(column, y), new Vector3(length, 0.0026f * CupScale, 0.0015f), mark);
                     tick.localRotation = FacingOut(column);
 
                     AddMarkLabel(parent, ml.ToString(), column - 30f, y, mark.color);
@@ -191,9 +216,9 @@ namespace Dishaster.EditorTools
             label.transform.SetParent(parent, false);
             label.transform.localPosition = OnGlass(angle, y);
             label.transform.localRotation = FacingOut(angle);
-            label.rectTransform.sizeDelta = new Vector2(0.04f, 0.012f);
+            label.rectTransform.sizeDelta = new Vector2(0.04f, 0.012f) * CupScale;
             label.text = text;
-            label.fontSize = 0.1f;
+            label.fontSize = 0.1f * CupScale;
             label.fontStyle = FontStyles.Bold;
             label.color = color;
             label.alignment = TextAlignmentOptions.Center;
@@ -201,77 +226,29 @@ namespace Dishaster.EditorTools
             label.ForceMeshUpdate();
         }
 
-        // Hamur bu kasede hazırlanıyor. Ağzı geniş, içi görünüyor; içerik sadece yüzeyi olarak çiziliyor.
+        // Hamur bu kasede hazırlanıyor (art'ın karıştırma kasesi). Ağzı geniş, içi görünüyor; içerik sadece yüzeyi
+        // olarak çiziliyor: seviye ve yarıçap kasenin kutusundan (iç profil yaklaşık).
         static GameObject BuildBowl()
         {
-            var root = new GameObject("MixingBowl");
+            GameObject art = KitchenLayout.Art(KitchenLayout.ToolsArt + "PF_MixingBowl_01");
+            GameObject root = art != null ? KitchenLayout.WrapOnBase("MixingBowl", art, Quaternion.identity) : new GameObject("MixingBowl");
+            Bounds bounds = KitchenLayout.MeshBounds(root.transform, root.transform);
+            float rim = Mathf.Max(bounds.extents.x, bounds.extents.z);
+            float height = bounds.size.y;
 
-            var body = new GameObject("Body");
-            body.transform.SetParent(root.transform, false);
-            body.AddComponent<MeshFilter>().sharedMesh = BuildBowlMesh();
-            body.AddComponent<MeshRenderer>().sharedMaterial = DishasterSceneBuilder.GetMaterial("M_Bowl", new Color(0.78f, 0.82f, 0.86f));
-
-            Transform fill = AddPart(root.transform, PrimitiveType.Cylinder, "Fill", new Vector3(0f, 0.05f, 0f), new Vector3(0.2f, 0.001f, 0.2f), FillMaterial());
+            Transform fill = AddPart(root.transform, PrimitiveType.Cylinder, "Fill", new Vector3(0f, height * 0.3f, 0f), new Vector3(rim, 0.001f, rim), FillMaterial());
 
             KitchenContainer container = AddContainer(root, 2500f, false, true, 0f);
             container.displayName = "Kase";
             container.isMixingBowl = true;
             container.fill = fill;
             container.fillIsDisc = true;
-            container.fillBottom = 0.014f;
-            container.fillTop = 0.095f;
-            container.fillRadiusBottom = 0.058f;
-            container.fillRadiusTop = 0.118f;
+            container.fillBottom = height * 0.12f;
+            container.fillTop = height * 0.9f;
+            container.fillRadiusBottom = rim * 0.45f;
+            container.fillRadiusTop = rim * 0.9f;
 
-            return SaveItem(root, KitchenItemKind.Generic, 0.14f, 0.1f, 0.1f);
-        }
-
-        // Profil (yarıçap, yükseklik): dıştan alttan ağza, içten ağızdan dibe. Her parça kendi kenarlarıyla.
-        static Mesh BuildBowlMesh()
-        {
-            Vector2[] profile =
-            {
-                new Vector2(0f, 0f), new Vector2(0.062f, 0f), new Vector2(0.13f, 0.1f), new Vector2(0.122f, 0.1f),
-                new Vector2(0.056f, 0.012f), new Vector2(0f, 0.012f),
-            };
-
-            const int sides = 28;
-            var vertices = new List<Vector3>();
-            var triangles = new List<int>();
-
-            for (int segment = 0; segment < profile.Length - 1; segment++)
-            {
-                Vector2 a = profile[segment];
-                Vector2 b = profile[segment + 1];
-                int start = vertices.Count;
-
-                for (int side = 0; side <= sides; side++)
-                {
-                    float angle = 2f * Mathf.PI * side / sides;
-                    float cos = Mathf.Cos(angle);
-                    float sin = Mathf.Sin(angle);
-                    vertices.Add(new Vector3(a.x * cos, a.y, a.x * sin));
-                    vertices.Add(new Vector3(b.x * cos, b.y, b.x * sin));
-                }
-
-                for (int side = 0; side < sides; side++)
-                {
-                    int i = start + side * 2;
-                    triangles.AddRange(new[] { i, i + 1, i + 3, i, i + 3, i + 2 });
-                }
-            }
-
-            var mesh = new Mesh { name = "Bowl" };
-            mesh.SetVertices(vertices);
-            mesh.SetTriangles(triangles, 0);
-            mesh.RecalculateNormals();
-            mesh.RecalculateBounds();
-
-            Directory.CreateDirectory(MeshFolder);
-            string path = MeshFolder + "/Bowl.asset";
-            AssetDatabase.DeleteAsset(path);
-            AssetDatabase.CreateAsset(mesh, path);
-            return mesh;
+            return SaveItem(root, KitchenItemKind.Generic, rim + 0.02f, height, rim);
         }
 
         static Material GetGlassMaterial()
@@ -320,26 +297,38 @@ namespace Dishaster.EditorTools
             return SaveItem(root, KitchenItemKind.Generic, grabRadius, height, holdForward);
         }
 
+        // Art'ın bıçağı: pivotu sapın ortası, uzun ekseni x. Eşyanın +z'si ağız (tutuş ve kesme buna göre), ağız aşağı.
         static GameObject BuildKnife()
         {
-            var root = new GameObject("Knife");
-            AddPart(root.transform, PrimitiveType.Cube, "Blade", new Vector3(0f, 0.007f, 0.07f), new Vector3(0.04f, 0.014f, 0.18f), DishasterSceneBuilder.GetMaterial("M_KnifeBlade", new Color(0.75f, 0.76f, 0.78f)));
-            AddPart(root.transform, PrimitiveType.Cube, "Handle", new Vector3(0f, 0.015f, -0.08f), new Vector3(0.035f, 0.03f, 0.12f), DishasterSceneBuilder.GetMaterial("M_KnifeHandle", new Color(0.12f, 0.10f, 0.09f)));
+            GameObject art = KitchenLayout.Art(KitchenLayout.ToolsArt + "PF_Knife_Chef_01");
+            if (art == null) return null;
 
-            GameObject prefab = SaveItem(root, KitchenItemKind.Knife, 0.16f, 0.03f, 0.09f);
+            // Ağız sapın hangi yanında: pivot sapta, kutunun büyük kısmı ağız tarafında.
+            GameObject probe = KitchenLayout.Instantiate(art, null);
+            Bounds artBounds = KitchenLayout.MeshBounds(probe.transform, probe.transform);
+            Object.DestroyImmediate(probe);
+            Quaternion bladeForward = Quaternion.Euler(0f, artBounds.center.x >= 0f ? -90f : 90f, 0f);
 
-            // Elde tutulunca bakılan noktaya ağzının ortası denk geliyor.
-            prefab.GetComponent<KitchenItem>().reachBack = 0.16f;
+            GameObject root = KitchenLayout.WrapOnBase("Knife", art, bladeForward);
+            Transform model = root.transform.GetChild(0);
+
+            // El sapı tutuyor (HandGoals): sap art'ın pivotunda.
+            var handle = new GameObject("Handle").transform;
+            handle.SetParent(root.transform, false);
+            handle.position = model.position;
+
+            Bounds bounds = KitchenLayout.MeshBounds(root.transform, root.transform);
+            float length = bounds.size.z;
+            float handleZ = handle.localPosition.z;
+            float bladeStart = handleZ + length * 0.18f;
+            float bladeMiddle = (bladeStart + bounds.max.z) / 2f;
+
+            // Avuç sapta: kök avucun önünde -sap kadar; bakılan noktaya ağzın ortası geliyor.
+            float holdForward = -handleZ;
+            GameObject prefab = SaveItem(root, KitchenItemKind.Knife, length * 0.45f, bounds.size.y, holdForward);
+            prefab.GetComponent<KitchenItem>().reachBack = bladeMiddle + holdForward;
             PrefabUtility.SavePrefabAsset(prefab);
             return prefab;
-        }
-
-        static GameObject BuildSaltShaker()
-        {
-            var root = new GameObject("SaltShaker");
-            AddPart(root.transform, PrimitiveType.Cylinder, "Body", new Vector3(0f, 0.06f, 0f), new Vector3(0.07f, 0.06f, 0.07f), DishasterSceneBuilder.GetMaterial("M_SaltBody", new Color(0.92f, 0.92f, 0.90f)));
-            AddPart(root.transform, PrimitiveType.Cylinder, "Cap", new Vector3(0f, 0.135f, 0f), new Vector3(0.07f, 0.015f, 0.07f), DishasterSceneBuilder.GetMaterial("M_SaltCap", new Color(0.45f, 0.46f, 0.48f)));
-            return SaveItem(root, KitchenItemKind.Generic, 0.08f, 0.15f, 0.04f);
         }
 
         /// <summary>KitchenItem ve el ışını için görünen hacme oturan trigger ekleyip prefab olarak kaydeder.</summary>

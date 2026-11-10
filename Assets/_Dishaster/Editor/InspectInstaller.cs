@@ -13,12 +13,12 @@ namespace Dishaster.EditorTools
     [InitializeOnLoad]
     public static class InspectInstaller
     {
-        const string Version = "1";
+        const string Version = "2";
         const string VersionFile = "ProjectSettings/DishasterInspect.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/Inspect.prefab";
 
-        static readonly Color PanelColor = new Color(0.12f, 0.11f, 0.14f, 0.85f);
-        static readonly Color TextColor = new Color(0.96f, 0.94f, 0.90f);
+        static readonly Color PanelColor = new Color(UiStyle.Ink.r, UiStyle.Ink.g, UiStyle.Ink.b, 0.82f);
+        static readonly Color TextColor = UiStyle.Cream;
 
         static InspectInstaller()
         {
@@ -62,14 +62,13 @@ namespace Dishaster.EditorTools
 
             // Nişangahın hemen altında.
             TMP_Text prompt = DishasterSceneBuilder.AddText(canvas, "Prompt", "[F] İncele", 30f, TextColor,
-                new Vector2(0.5f, 0.5f), new Vector2(0f, -60f), new Vector2(400f, 50f));
+                new Vector2(0.5f, 0.5f), new Vector2(0f, -60f), new Vector2(400f, 50f), true);
+            var promptShadow = prompt.gameObject.AddComponent<UnityEngine.UI.Shadow>();
+            promptShadow.effectColor = new Color(0f, 0f, 0f, 0.6f);
+            promptShadow.effectDistance = new Vector2(1.5f, -1.5f);
             inspect.prompt = prompt.gameObject;
 
-            var panel = new GameObject("Help").AddComponent<Image>();
-            panel.transform.SetParent(canvas, false);
-            panel.color = PanelColor;
-            panel.raycastTarget = false;
-            DishasterSceneBuilder.SetRect(panel.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 60f), new Vector2(900f, 64f));
+            Image panel = UiStyle.Card(canvas, "Help", PanelColor, new Vector2(0.5f, 0f), new Vector2(0f, 60f), new Vector2(900f, 64f));
             DishasterSceneBuilder.AddText(panel.transform, "HelpText", "[F] Bırak     Fare: etrafında dön     Tekerlek: yaklaş / uzaklaş", 26f, TextColor,
                 new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(880f, 60f));
             inspect.help = panel.gameObject;

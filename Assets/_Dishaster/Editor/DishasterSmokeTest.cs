@@ -175,17 +175,17 @@ namespace Dishaster.EditorTools
 
         static void CheckFoods()
         {
-            var showcase = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/_Dishaster/Prefabs/FoodShowcase.prefab");
-            if (showcase == null)
+            // Mutfak odası (art parçaları) ve art'ın 8 yiyeceğinin eşya prefab'ları (kasalarda, buzdolabında, adada).
+            if (AssetDatabase.LoadAssetAtPath<GameObject>("Assets/_Dishaster/Prefabs/Kitchen.prefab") == null) Fail("Kitchen prefab yok");
+
+            int count = 0;
+            foreach (string food in new[] { "Strawberry", "Tomato", "Onion", "Pepper", "Mushroom", "Carrot", "Cheese_Block", "Bread_Loaf" })
             {
-                Fail("FoodShowcase prefab yok");
-                return;
+                if (AssetDatabase.LoadAssetAtPath<GameObject>($"Assets/_Dishaster/Prefabs/Items/Art_{food}.prefab") != null) count++;
+                else Fail("yiyecek eşyası yok: Art_" + food);
             }
 
-            Transform foods = showcase.transform.Find("Foods");
-            int count = foods != null ? foods.childCount : 0;
-            if (count != 8) Fail($"FoodShowcase'de {count} yiyecek (8 bekleniyor)");
-            else Info("foods ok: 8");
+            Info($"foods ok: {count}");
         }
 
         // Çilekli süt baştan sona: doğra, bardağa dök, kaseye dök, dilimleri ekle → tamamlanmalı.

@@ -52,7 +52,7 @@ namespace Dishaster
         public Shader effectShader;
         public Shader outlineMaskShader;
         public Transform hand;
-        [Tooltip("Sadece görmeyende açılıyor: tahta tarafına geçemesin.")]
+        [Tooltip("İsteğe bağlı: sadece görmeyende açılan engel (şimdilik yok).")]
         public Collider boardBarrier;
 
         [Header("El (metre)")]
@@ -160,7 +160,7 @@ namespace Dishaster
             _aimPoint = hand.position;
             _handLocal = player.transform.InverseTransformPoint(hand.position);
             hand.gameObject.SetActive(true);
-            boardBarrier.enabled = true;
+            if (boardBarrier != null) boardBarrier.enabled = true;
 
             // Test: normal görüş, nişangah da kalıyor (bkz. DishasterTest).
             if (DishasterTest.LowVisionSeesEverything) return;

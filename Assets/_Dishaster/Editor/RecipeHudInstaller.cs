@@ -14,13 +14,14 @@ namespace Dishaster.EditorTools
     [InitializeOnLoad]
     public static class RecipeHudInstaller
     {
-        const string Version = "3";
+        const string Version = "4";
         const string VersionFile = "ProjectSettings/DishasterRecipeHud.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/RecipeHud.prefab";
 
-        static readonly Color PanelColor = new Color(0.08f, 0.07f, 0.06f, 0.82f);
-        static readonly Color FailColor = new Color(0.55f, 0.08f, 0.06f, 0.92f);
-        static readonly Color TextColor = new Color(0.96f, 0.94f, 0.90f);
+        // Tarif kartı kremde mürekkep; sonuç şeridi terrakota (tamamlanınca yeşile dönüyor), yazısı krem.
+        static readonly Color PanelColor = new Color(UiStyle.Cream.r, UiStyle.Cream.g, UiStyle.Cream.b, 0.96f);
+        static readonly Color FailColor = UiStyle.Terracotta;
+        static readonly Color TextColor = UiStyle.Ink;
 
         static RecipeHudInstaller()
         {
@@ -71,7 +72,7 @@ namespace Dishaster.EditorTools
 
             RectTransform failPanel = AddPanel(canvas, "FailPanel", FailColor, new Vector2(0.5f, 1f), new Vector2(0f, -110f), new Vector2(980f, 130f));
             hud.failPanel = failPanel.gameObject;
-            hud.failText = DishasterSceneBuilder.AddText(failPanel, "FailText", "", 40f, TextColor, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(940f, 120f));
+            hud.failText = DishasterSceneBuilder.AddText(failPanel, "FailText", "", 40f, UiStyle.Cream, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(940f, 120f), true);
 
             PrefabUtility.SaveAsPrefabAsset(canvas.gameObject, PrefabPath);
             Object.DestroyImmediate(canvas.gameObject);
@@ -79,12 +80,7 @@ namespace Dishaster.EditorTools
 
         static RectTransform AddPanel(Transform parent, string name, Color color, Vector2 anchor, Vector2 position, Vector2 size)
         {
-            var image = new GameObject(name).AddComponent<Image>();
-            image.transform.SetParent(parent, false);
-            image.color = color;
-            image.raycastTarget = false;
-            DishasterSceneBuilder.SetRect(image.rectTransform, anchor, position, size);
-            return image.rectTransform;
+            return UiStyle.Card(parent, name, color, anchor, position, size).rectTransform;
         }
     }
 }
