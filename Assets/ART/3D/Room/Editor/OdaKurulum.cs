@@ -41,8 +41,9 @@ public static class OdaKurulum
 
         var varsayilanDuvar = duvar[0];   // Krem
         var varsayilanZemin = zemin[1];   // Bej
+        var kubbe = LambaMalzemesi();
         foreach (var fbx in Directory.GetFiles(Root, "SM_*.fbx", SearchOption.TopDirectoryOnly))
-            Model(fbx.Replace('\\', '/'), varsayilanDuvar, varsayilanZemin, cam, trim);
+            Model(fbx.Replace('\\', '/'), varsayilanDuvar, varsayilanZemin, cam, trim, kubbe);
 
         Prefab("PF_Wall_100", duvar, OdaRengi.Renk.Krem, ("Model", "SM_Wall_100", Vector3.zero));
         Prefab("PF_Wall_050", duvar, OdaRengi.Renk.Krem, ("Model", "SM_Wall_050", Vector3.zero));
@@ -59,8 +60,79 @@ public static class OdaKurulum
             ("Kapi_Cercevesi", "SM_DoorFrame_01", Vector3.zero),
             ("Kapi", "SM_Door_01", B(1.2674f, 0.075f, 0f)));
 
+        LambaPrefab();
+
         AssetDatabase.SaveAssets();
-        Debug.Log("Oda kurulum: bitti (5 duvar, zemin; 6 duvar ve 6 zemin rengi).");
+        Debug.Log("Oda kurulum: bitti (5 duvar, zemin, sarkit lamba; 6 duvar ve 6 zemin rengi).");
+    }
+
+    // ---------- sarkit lamba (11 Kas 2026) ----------
+    // Kubbe mat hardal cam: renk ve emission dokusu (tepede hardal, alt agza dogru sicak beyaz). Duy ve kablo mobilya trim'i.
+    static Material LambaMalzemesi()
+    {
+        string bc = $"{Root}/Textures/T_Lamp_Shade_BaseColor.png", em = $"{Root}/Textures/T_Lamp_Shade_Emission.png";
+        foreach (var p in new[] { bc, em })
+        {
+            var ti = AssetImporter.GetAtPath(p) as TextureImporter;
+            if (ti == null) { Debug.LogWarning($"Oda kurulum: {p} yok"); return null; }
+            ti.textureType = TextureImporterType.Default; ti.sRGBTexture = true; ti.maxTextureSize = 512;
+            ti.mipmapEnabled = true; ti.wrapMode = TextureWrapMode.Clamp; ti.SaveAndReimport();
+        }
+        var mat = MatAsset("M_Lamp_Shade");
+        mat.SetTexture("_MainTex", AssetDatabase.LoadAssetAtPath<Texture2D>(bc));
+        mat.SetColor("_Color", Color.white);
+        Mat(mat);
+        mat.SetFloat("_Glossiness", 0.25f);   // mat cam
+        mat.SetTexture("_EmissionMap", AssetDatabase.LoadAssetAtPath<Texture2D>(em));
+        mat.SetColor("_EmissionColor", Color.white * 1.5f);
+        mat.EnableKeyword("_EMISSION");
+        mat.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+        EditorUtility.SetDirty(mat);
+        return mat;
+    }
+
+    // Kok = kablonun duya baglandigi nokta (kubbenin alt agzindan 35 cm yukari). Kablo ayri cocuk (Kablo): pivotu
+    // alt ucunda, localScale.y ile uzar (1 = 30,7 cm). Tavan 2,8 m'de, kok 2,49 m'de iken kablo olcegi 1.
+    // Isik kubbenin altindaki isik diskinin hemen altinda (kokten 39 cm asagi).
+    static void LambaPrefab()
+    {
+        string pfPath = $"{Root}/Prefabs/PF_Lamp_Pendant_01.prefab";
+        bool exists = File.Exists(pfPath);
+        var root = exists ? PrefabUtility.LoadPrefabContents(pfPath) : new GameObject("PF_Lamp_Pendant_01");
+        try
+        {
+            Parca(root.transform, "Model", "SM_Lamp_Pendant_01", Vector3.zero);
+            // kablo boyu sahnede ayarlanir: mevcut olcek korunur
+            var kt = root.transform.Find("Kablo");
+            var kOlcek = kt ? kt.localScale : Vector3.one;
+            Parca(root.transform, "Kablo", "SM_Lamp_Pendant_01_Cable", Vector3.zero);
+            root.transform.Find("Kablo").localScale = kOlcek;
+            var t = root.transform.Find("Isik");
+            bool yeniIsik = !t;
+            if (yeniIsik) { t = new GameObject("Isik").transform; t.SetParent(root.transform, false); }
+            t.localPosition = B(0f, 0f, -0.393f);
+            var l = t.GetComponent<Light>();
+            if (!l) l = t.gameObject.AddComponent<Light>();
+            if (yeniIsik)   // ilk kurulumda; sonra sahnede ayarlanan degerler korunur
+            {
+                l.type = LightType.Point;
+                l.color = new Color(1f, 0.886f, 0.722f);   // #FFE2B8 sicak beyaz
+                l.intensity = 1.5f;
+                l.range = 7f;
+                l.shadows = LightShadows.Soft;
+            }
+            var lamba = root.GetComponent<Lamba>();
+            if (!lamba) lamba = root.AddComponent<Lamba>();
+            lamba.isik = l;
+            lamba.kubbe = root.transform.Find("Model").GetComponent<MeshRenderer>();
+            PrefabUtility.SaveAsPrefabAsset(root, pfPath);
+        }
+        finally
+        {
+            if (exists) PrefabUtility.UnloadPrefabContents(root);
+            else Object.DestroyImmediate(root);
+        }
+        Debug.Log("Oda kurulum: PF_Lamp_Pendant_01");
     }
 
     static Material Malzeme(string ad, string doku, bool repeat)
@@ -113,7 +185,7 @@ public static class OdaKurulum
         EditorUtility.SetDirty(mat);
     }
 
-    static void Model(string path, Material duvar, Material zemin, Material cam, Material trim)
+    static void Model(string path, Material duvar, Material zemin, Material cam, Material trim, Material kubbe)
     {
         var mi = (ModelImporter)AssetImporter.GetAtPath(path);
         mi.globalScale = 1f;
@@ -130,6 +202,7 @@ public static class OdaKurulum
         mi.materialImportMode = ModelImporterMaterialImportMode.ImportViaMaterialDescription;
         void Esle(string ad, Material m) { if (m) mi.AddRemap(new AssetImporter.SourceAssetIdentifier(typeof(Material), ad), m); }
         Esle("M_Room_Wall", duvar); Esle("M_Room_Floor", zemin); Esle("M_Room_Glass", cam); Esle("M_Furniture_Trim", trim);
+        Esle("M_Lamp_Shade", kubbe);
         mi.SaveAndReimport();
     }
 

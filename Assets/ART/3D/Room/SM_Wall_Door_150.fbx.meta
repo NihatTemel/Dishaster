@@ -12,6 +12,11 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
+      name: M_Lamp_Shade
+    second: {fileID: 2100000, guid: 342f7b1bd7c9b7b4889febe3feb67fbb, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
       name: M_Room_Floor
     second: {fileID: 2100000, guid: 3417c631442b71741990f2298ccd7919, type: 2}
   - first:
