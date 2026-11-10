@@ -66,6 +66,8 @@ namespace Dishaster
             public Quaternion[] open;
             public Quaternion[] grip;
             public Quaternion[] fist;
+            // O karede animasyonun pozu (IK'dan önce): IK sonucu bununla ağırlık kadar karıştırılıyor.
+            public Quaternion[] animated;
             public float weight;
             // Son karede elin ön koldan bükülmesi (derece, test için).
             public float bend;
@@ -261,6 +263,7 @@ namespace Dishaster
             arm.open = open.ToArray();
             arm.grip = grip.ToArray();
             arm.fist = fist.ToArray();
+            arm.animated = new Quaternion[arm.fingers.Length + 3];
             return arm;
         }
 
@@ -438,7 +441,8 @@ namespace Dishaster
 
                 HandGoal work = arm.Work;
                 Vector3 wristTarget = WristTarget(arm, work);
-                Vector3 target = Vector3.Lerp(arm.wrist.position, wristTarget, arm.weight);
+                bool partial = arm.weight < 0.999f;
+                if (partial) RememberAnimated(arm);
 
                 // Dirsek: ön kol elin devamı olsun (bilek düz kalsın), biraz aşağıda; kolun doğal yanı (dışarı-aşağı)
                 // ile karışık, ters dönmesin.
@@ -447,9 +451,32 @@ namespace Dishaster
                 Vector3 along = work.fingers.sqrMagnitude > 1e-8f ? work.fingers.normalized : transform.forward;
                 Vector3 behind = wristTarget - along * 0.26f - transform.up * 0.12f;
                 Vector3 hint = Vector3.Lerp(natural, behind, 0.7f);
-                SolveArm(arm.upper, arm.fore, arm.wrist, target, hint);
+                SolveArm(arm.upper, arm.fore, arm.wrist, wristTarget, hint);
                 ShapeHand(arm, work);
+
+                // Uzanırken ve geri inerken: kol hedefe tam çözülüyor, sonra her eklem animasyonun pozuyla ağırlık kadar
+                // karışıyor. Kol omuzdan dönerek yerine geliyor, avuç yavaşça bacağa dönüyor; ağırlık bitince sıçramıyor.
+                // (Eskiden sadece hedef noktası karışıyordu: dirsek ve el yönü son ana kadar tam çevrildiği için iniş
+                // sırasında kol burulup avuç dışarı bakıyor, ağırlık sıfırlanınca birden düzeliyordu.)
+                if (partial) BlendWithAnimated(arm, arm.weight);
             }
+        }
+
+        static void RememberAnimated(Arm arm)
+        {
+            arm.animated[0] = arm.upper.localRotation;
+            arm.animated[1] = arm.fore.localRotation;
+            arm.animated[2] = arm.wrist.localRotation;
+            for (int i = 0; i < arm.fingers.Length; i++) arm.animated[i + 3] = arm.fingers[i].localRotation;
+        }
+
+        static void BlendWithAnimated(Arm arm, float weight)
+        {
+            arm.upper.localRotation = Quaternion.Slerp(arm.animated[0], arm.upper.localRotation, weight);
+            arm.fore.localRotation = Quaternion.Slerp(arm.animated[1], arm.fore.localRotation, weight);
+            arm.wrist.localRotation = Quaternion.Slerp(arm.animated[2], arm.wrist.localRotation, weight);
+            for (int i = 0; i < arm.fingers.Length; i++)
+                arm.fingers[i].localRotation = Quaternion.Slerp(arm.animated[i + 3], arm.fingers[i].localRotation, weight);
         }
 
         /// <summary>
@@ -519,7 +546,8 @@ namespace Dishaster
                     goal = Quaternion.FromToRotation(pointing, limited) * goal;
                 }
 
-                Quaternion turn = Quaternion.Slerp(Quaternion.identity, goal * Quaternion.Inverse(now), arm.weight);
+                // Tam dönüş: ağırlıkla karışım kolun tamamında, eklem eklem (BlendWithAnimated).
+                Quaternion turn = goal * Quaternion.Inverse(now);
                 Quaternion wanted = turn * arm.wrist.rotation;
 
                 Vector3 axis = arm.wrist.position - arm.fore.position;
@@ -543,8 +571,7 @@ namespace Dishaster
             Quaternion[] closed = work.closedFrame == HandGoals.FrameFist ? arm.fist : arm.grip;
             for (int i = 0; i < arm.fingers.Length; i++)
             {
-                Quaternion pose = HandGoals.Finger(arm.open[i], closed[i], work);
-                arm.fingers[i].localRotation = Quaternion.Slerp(arm.fingers[i].localRotation, pose, arm.weight);
+                arm.fingers[i].localRotation = HandGoals.Finger(arm.open[i], closed[i], work);
             }
         }
 
