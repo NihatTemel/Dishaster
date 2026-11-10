@@ -6,7 +6,9 @@
 // Assets/ART/3D/Fruit_Vegetables/
 //   SM_<Ad>.fbx        bir yiyecek: butun hal (SM_<Ad>) + dilimler (SM_<Ad>_Seg01...). Blender'dan 20_export_food_unity.py ile.
 //   Textures\          T_Food_Atlas_BaseColor.png: sekiz yiyecegin ortak dokusu (2048)
-//   Materials\         bu betik olusturur: M_Food_Atlas.mat (Standard, parlama yok)
+//                      T_Food_Atlas_BaseColor_Cooked.png, _Burnt.png: pismis ve yanmis durumlar (ayni UV)
+//   Materials\         bu betik olusturur: M_Food_Atlas.mat, M_Food_Atlas_Cooked.mat, M_Food_Atlas_Burnt.mat
+//                      (Standard, parlama yok)
 //   Prefabs\           bu betik olusturur: PF_<Ad>.prefab
 //
 // Prefab yapisi (PF_Carrot_01 ornegi):
@@ -30,6 +32,11 @@ public static class YiyecekKurulum
     {
         var tex = SetupTexture($"{Root}/Textures/T_Food_Atlas_BaseColor.png");
         var mat = SetupMaterial($"{Root}/Materials/{MatName}.mat", tex);
+        // Pismis ve yanmis durumlar (10 Kas 2026): ayni mesh ve UV, yalnizca doku farkli. Prefablarda normal kalir;
+        // oyun sirasinda MeshRenderer.sharedMaterial bu ikisinden birine cevrilir (Nihat).
+        foreach (var durum in new[] { "Cooked", "Burnt" })
+            SetupMaterial($"{Root}/Materials/{MatName}_{durum}.mat",
+                          SetupTexture($"{Root}/Textures/T_Food_Atlas_BaseColor_{durum}.png"));
         Directory.CreateDirectory($"{Root}/Prefabs");
 
         // yalnizca kok klasordeki SM_*.fbx (Test klasoru haric)
