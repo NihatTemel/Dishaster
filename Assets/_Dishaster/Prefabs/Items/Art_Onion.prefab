@@ -47,8 +47,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   kind: 0
-  grabRadius: 0.07570258
-  height: 0.12750684
+  grabRadius: 0.08941335
+  height: 0.16575888
   holdForward: 0.03
   reachBack: 0
   segments:
@@ -86,8 +86,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.09140516, y: 0.12750684, z: 0.09140515}
-  m_Center: {x: 0, y: 0.06375342, z: 0}
+  m_Size: {x: 0.1188267, y: 0.16575888, z: 0.1188267}
+  m_Center: {x: 0, y: 0.08287944, z: 0}
 --- !u!1001 &1864342645662520856
 PrefabInstance:
   m_ObjectHideFlags: 0
