@@ -36,6 +36,8 @@ public static class OdaKurulum
         var duvar = Renkler.Select(r => Malzeme($"M_Room_Wall_{r}", $"{Root}/Textures/T_Room_Wall_BaseColor_{r}.png", true)).ToArray();
         var zemin = Renkler.Select(r => Malzeme($"M_Room_Floor_{r}", $"{Root}/Textures/T_Room_Floor_BaseColor_{r}.png", false)).ToArray();
         var cam = Cam();
+        // Tavan: bal ahsap lambri, 1 m'de tekrar (tavan mesh'inin UV'si metre). Mutfak kurulumu bunu kullanir.
+        Malzeme("M_Room_Ceiling", $"{Root}/Textures/T_Room_Ceiling_BaseColor.png", true);
         var trim = AssetDatabase.LoadAssetAtPath<Material>(TrimPath);
         if (!trim) Debug.LogWarning("Oda kurulum: M_Furniture_Trim yok, once Mobilyalari kur calistirilmali");
 

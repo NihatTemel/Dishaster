@@ -29,6 +29,16 @@ Her prefabın kökünde `OdaRengi` var (yalnızca duvar boyası ve zeminin renkl
 - `Lamba` bileşeni: `acik` (ışık ve kubbe parlaması birlikte), `parlaklik` (kubbenin emission çarpanı, varsayılan 1,5). Kodla: alanı değiştir, `Uygula()` çağır. Her lamba kendi parlaklığını taşır (malzeme ortak).
 - Önerilen yer: adanın üstüne 1 m arayla iki tane.
 
+## Tavan
+
+- `M_Room_Ceiling`: bal ahşap lambri (20 cm'lik tahtalar, 1 m'de tekrar, Repeat). Mutfak kurulumundaki tavan düzlemi UV'yi metre olarak veriyor; bu malzeme ona göre. (Duvar malzemesi tavanda kullanılmamalı: alt şeridi süpürgelik ahşabı olduğu için metrede bir ahşap çizgi çıkar.)
+
+## Manav reyonu ve tabak yığını (menü: Dishaster > Art > Manav reyonu ve tabak yiginini kur, `Editor/DekorKurulum.cs`)
+
+- `PF_Manav_Reyonu`: 2 sıra × 3 kasa, ~1,9 × 0,9 × 0,65 m. Ön sıra yerde (soldan Domates, Biber, Havuç), arka sıra boş birer kasanın üstünde (Soğan, Mantar, Çilek). Kasalar içleri görünsün diye öne 10° eğik. Pivot arka kenarın ortası, yerde; önü +Z (duvara yaslanır).
+- Kasaların içi yalnızca görsel (yiyecek art prefabları). Her kasada boş bir `Al_<Malzeme>` noktası var: oyun kodu kasayı kaynak yapar, Aşçı uzanınca o noktada alınabilir yeni bir yiyecek oluşturur (kasa boşalmaz; adet sınırı istenirse kodda).
+- `PF_Plate_Stack_06`: 6 servis tabağı iç içe, ~13 cm yükseklik, pivot tabanın ortası. Duvar rafına konur.
+
 ## Ölçü ve pivot
 
 - Duvar pivotu: **odaya bakan yüzün sol-alt köşesi, yerde**. Oda yüzü pivotun önüne (+Z) bakar, kalınlık arkaya (−Z) gider. Dolapların pivotu da sol-arka köşe olduğu için duvarın önüne konan dolap tam yaslanır. 50 cm ızgaraya oturur; yan duvar için prefabı Y'de 90° çevir.
@@ -59,6 +69,7 @@ Assets/ART/3D/Room/
   Scripts/OdaRengi.cs               renk seçimi (oyunda da çalışır)
   Scripts/Lamba.cs                  lamba aç / kapa
   Editor/OdaKurulum.cs              menü
+  Editor/DekorKurulum.cs            manav reyonu ve tabak yığını menüsü
 ```
 
 Yeni renk: `Game\Scripts\29_build_room_textures.py`'de renk listesine ekle, dokuyu üret, `30_export_room_unity.py`, `OdaRengi.Renk` ve `OdaKurulum.Renkler`'e ekle.

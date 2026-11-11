@@ -29,9 +29,9 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _Contrast: 1.08
-    - _Saturation: 1.12
-    - _Vignette: 0.35
-    - _Warmth: 0.12
+    - _Contrast: 1
+    - _Saturation: 1
+    - _Vignette: 0
+    - _Warmth: 0
     m_Colors: []
   m_BuildTextureStacks: []
