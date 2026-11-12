@@ -133,60 +133,104 @@ namespace Dishaster
             };
         }
 
+        // Bıçak: parmaklar sapın çevresinde ağız tarafına doğru kıvrık (ağız çizgisinden bu kadar aşağı), sap yumruğun
+        // içinden çapraz geçiyor; avucun ortası sapın dışında (elin sırtı dışa) ve biraz gerisinde (bilek tarafı).
+        const float KnifeFingerAngle = 55f;
+        const float KnifePalmOut = 0.03f;
+        const float KnifePalmBack = 0.05f;
+        const float KnifeCurl = 0.85f;
+        // Yandan: avucun ortası eşyanın yan yüzünden bu kadar dışarıda (avuç derisi yüzeye değsin), eşyanın ortasından
+        // biraz geride (parmaklar önünü sarsın).
+        const float SideGap = 0.018f;
+        const float SideBack = 0.025f;
+        // Saplı kapta (ölçü bardağı) yumruk dikey sapı kavrıyor: avucun ortası sapın dışında ve gerisinde.
+        const float HandlePalmOut = 0.028f;
+        const float HandlePalmBack = 0.045f;
+        // Avuçta: avucun ortası eşyanın tabanının bu kadar altında, biraz da gerisinde (eşya parmaklara yakın oturuyor).
+        const float PalmUnder = 0.02f;
+        const float PalmBack = 0.015f;
+
         /// <summary>
-        /// Tutulan eşyaya göre kavrayış: bıçak sapından yumrukla (sap ön kolun devamı), kap/kutu yandan sarılarak,
-        /// küçük şeyler (dilim, meyve) üstten. Eşya eğilince (dökerken) ya da bıçak inince el de onunla gidiyor.
+        /// Tutulan eşyaya göre kavrayış (KitchenItem.Grip): bıçak sapından yumrukla, ağız aşağı; kap ve uzun şeyler
+        /// (kavanoz) yandan sarılarak; küçük şeyler (meyve, sebze, dilim) avucun içinde, el altında, parmaklar
+        /// etrafına kıvrık. Eşya eğilince (dökerken) ya da bıçak inince el de onunla gidiyor.
         /// </summary>
         public static HandGoal Grip(KitchenItem item)
         {
             Transform t = item.transform;
-            if (item.kind == KitchenItemKind.Knife)
+            Bounds bounds = item.LocalBox;
+
+            switch (item.Grip)
             {
-                Transform handle = t.Find("Handle");
-                return new HandGoal
+                case KitchenGrip.Knife:
                 {
-                    active = true,
-                    palm = handle != null ? handle.position : t.TransformPoint(new Vector3(0f, 0.015f, -0.08f)),
-                    fingers = t.forward - t.up * 0.25f,
-                    palmFacing = -t.right,
-                    closedFrame = FrameFist,
-                    curl = 1f,
-                };
-            }
+                    Transform handle = t.Find("Handle");
+                    Vector3 handlePoint = handle != null ? handle.position : t.TransformPoint(bounds.center);
+                    Vector3 along = t.forward;
+                    Vector3 edge = t.TransformDirection(item.EdgeLocal).normalized;
+                    Vector3 outward = Vector3.Cross(-edge, along).normalized;
+                    float angle = KnifeFingerAngle * Mathf.Deg2Rad;
+                    Vector3 fingers = along * Mathf.Cos(angle) + edge * Mathf.Sin(angle);
+                    return new HandGoal
+                    {
+                        active = true,
+                        palm = handlePoint + outward * KnifePalmOut - fingers * KnifePalmBack,
+                        fingers = fingers,
+                        palmFacing = -outward,
+                        closedFrame = FrameFist,
+                        curl = KnifeCurl,
+                    };
+                }
 
-            Bounds bounds = LocalBounds(item);
-            if (item.Container != null)
-            {
-                // Yandan sarıyor: avuç kabın sağ yüzüne, parmaklar ileri, başparmak üstte.
-                return new HandGoal
+                case KitchenGrip.Side:
                 {
-                    active = true,
-                    palm = t.TransformPoint(new Vector3(bounds.max.x + 0.012f, bounds.center.y, bounds.center.z)),
-                    fingers = t.forward,
-                    palmFacing = -t.right,
-                    closedFrame = FrameGrip,
-                    curl = 0.85f,
-                };
+                    // Saplıysa yumruk sapta: parmaklar ileri, avuç içe, yumruğun deliği dikey (sap gibi).
+                    Transform handle = t.Find("Handle");
+                    if (handle != null)
+                    {
+                        return new HandGoal
+                        {
+                            active = true,
+                            palm = handle.position + t.right * HandlePalmOut - t.forward * HandlePalmBack,
+                            fingers = t.forward,
+                            palmFacing = -t.right,
+                            closedFrame = FrameFist,
+                            curl = 0.8f,
+                        };
+                    }
+
+                    // Avuç eşyanın sağ yüzünde, parmaklar ileri ve önünü sarıyor, başparmak üstte; ince eşyada daha
+                    // çok kapanıyor.
+                    float width = Mathf.Max(bounds.size.x, bounds.size.z);
+                    return new HandGoal
+                    {
+                        active = true,
+                        palm = t.TransformPoint(new Vector3(bounds.max.x + SideGap, bounds.center.y, bounds.center.z - SideBack)),
+                        fingers = t.forward,
+                        palmFacing = -t.right,
+                        closedFrame = FrameFist,
+                        curl = Mathf.Clamp(0.78f - width * 2.5f, 0.3f, 0.65f),
+                    };
+                }
+
+                default:
+                {
+                    // Avuç yukarı ve biraz içe, parmaklar ileri-içe; geniş eşyada parmaklar daha az kapanıyor.
+                    Vector3 facing = (t.up - t.right * 0.3f).normalized;
+                    Vector3 fingers = (t.forward - t.right * 0.25f + t.up * 0.1f).normalized;
+                    Vector3 bottom = t.TransformPoint(new Vector3(bounds.center.x, bounds.min.y, bounds.center.z));
+                    float width = Mathf.Max(bounds.size.x, bounds.size.z);
+                    return new HandGoal
+                    {
+                        active = true,
+                        palm = bottom - facing * PalmUnder - fingers * PalmBack,
+                        fingers = fingers,
+                        palmFacing = facing,
+                        closedFrame = FrameGrip,
+                        curl = Mathf.Clamp(0.78f - width * 1.5f, 0.3f, 0.68f),
+                    };
+                }
             }
-
-            // Küçük şey: avuç aşağı, üstünden kavrıyor.
-            return new HandGoal
-            {
-                active = true,
-                palm = t.TransformPoint(new Vector3(bounds.center.x, bounds.max.y + 0.025f, bounds.center.z)),
-                fingers = t.forward,
-                palmFacing = -t.up,
-                closedFrame = FrameGrip,
-                curl = 0.6f,
-            };
-        }
-
-        /// <summary>Eşyanın kendi eksenlerinde kutusu (tetik collider'ı ondan kuruluyor).</summary>
-        static Bounds LocalBounds(KitchenItem item)
-        {
-            return item.TryGetComponent(out BoxCollider box)
-                ? new Bounds(box.center, box.size)
-                : new Bounds(Vector3.up * item.height / 2f, new Vector3(0.06f, item.height, 0.06f));
         }
 
         /// <summary>

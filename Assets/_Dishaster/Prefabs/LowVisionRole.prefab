@@ -81,6 +81,7 @@ MonoBehaviour:
   hand: {fileID: 2888597771045747388}
   boardBarrier: {fileID: 0}
   reach: 1.45
+  downReach: 0.35
   restDistance: 0.55
   touchRadius: 0.18
   touchMemorySeconds: 1

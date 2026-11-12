@@ -8,11 +8,14 @@ namespace Dishaster
 {
     /// <summary>
     /// Uçtan uca otomatik test: build "-dishasterAutotest" bayrağıyla açılınca (başka türlü hiç çalışmıyor) local host
-    /// açıyor, Görmedim'i seçip oyuna giriyor ve çilekli sütü gerçek mutfak mesajlarıyla baştan sona yapıyor:
-    /// buzdolabını aç, çileği al, tahtaya koy, bıçakla doğra, süt kutusundan ölçü bardağına dök, bardaktan kaseye dök,
-    /// dilimleri kaseye at. Sonunda tarifin tamamlandığını ve hiç hata/istisna loglanmadığını denetleyip çıkıyor
-    /// (çıkış kodu 0 = geçti). Sonuçlar "[AUTOTEST]" önekiyle.
+    /// açıyor, Görmedim'i seçip oyuna giriyor ve ilk tarifi (domatesli tabak) gerçek mutfak mesajlarıyla baştan sona
+    /// yapıyor: yığından tabak al, adaya koy, kasadan domates al, tahtaya koy, bıçakla 3 dilim doğra, dilimleri tabağa
+    /// koy. Ayrıca çömelme, yerdeki kasaya uzanma ve adanın dışına (kiler tezgahı, buzdolabı rafı, kasa) bırakma.
+    /// Sonunda tarifin tamamlandığını ve hiç hata/istisna loglanmadığını denetleyip çıkıyor (çıkış kodu 0 = geçti).
+    /// Sonuçlar "[AUTOTEST]" önekiyle.
     /// </summary>
+    // Çekimler kare sonunda (karakterin kolları LateUpdate'te yerleştikten sonra) alınıyor.
+    [DefaultExecutionOrder(1000)]
     public class DishasterAutoTest : MonoBehaviour
     {
         const string Flag = "-dishasterAutotest";
@@ -33,7 +36,7 @@ namespace Dishaster
         bool _observe;
         int _players = 1;
         ushort _port;
-        const float TimeoutSeconds = 150f;
+        const float TimeoutSeconds = 420f;
 
         readonly List<string> _errors = new List<string>();
 
@@ -50,6 +53,11 @@ namespace Dishaster
         void Awake()
         {
             Application.logMessageReceived += OnLog;
+
+            // Pencere yokken kare sınırsız hızlanıyor: karakterin bir karedeki hareketi CharacterController'ın en küçük
+            // adımının altına düşüyordu (yürüme testi yerinde sayıyordu). Oyundaki gibi 60 kare.
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = 60;
 
             string[] args = System.Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length - 1; i++)
@@ -154,9 +162,7 @@ namespace Dishaster
             yield return new WaitForSeconds(1f);
             KitchenCounter counter = KitchenCounter.Instance;
             Recipe recipe = counter.Recipe;
-            int slices = recipe.TargetOf(Ingredient.Strawberry);
-            int milk = recipe.TargetOf(Ingredient.Milk);
-            Log($"tarif: {slices} dilim çilek, {milk} ml süt");
+            Log($"tarif: {recipe.Title}, {recipe.TargetOf(Ingredient.Tomato)} dilim domates");
 
             Check(player.GetComponentInChildren<CharacterBody>() != null, "karakter giydirilmedi");
             Check(CharacterBody.FindBone(player.transform, "LeftHand") != null, "karakterin elleri yok");
@@ -181,149 +187,45 @@ namespace Dishaster
             yield return Shot("blind_fp_idle");
             yield return Third("blind_3p_idle", player, false);
 
-            // Buzdolabı kapağı.
-            KitchenDoor door = FindObjectOfType<KitchenDoor>();
-            if (door != null && door.panel != null)
+            IEnumerator pantry = ShowPantry(counter, player);
+            while (pantry.MoveNext()) yield return pantry.Current;
+
+            IEnumerator overlap = CheckNoOverlap(counter);
+            while (overlap.MoveNext()) yield return overlap.Current;
+
+            IEnumerator grips = ShowGrips(counter, player);
+            while (grips.MoveNext()) yield return grips.Current;
+
+            IEnumerator crouch = CheckCrouch(player);
+            while (crouch.MoveNext()) yield return crouch.Current;
+
+            IEnumerator reach = CheckCrateReach(counter, player);
+            while (reach.MoveNext()) yield return reach.Current;
+
+            // Buzdolabının kapakları (raflara bırakma testi için de açık kalıyor).
+            foreach (KitchenDoor door in FindObjectsOfType<KitchenDoor>())
             {
+                if (door.panel == null) continue;
                 yield return Approach(door.panel.bounds.center);
                 counter.RequestGrabOrDrop(door.panel.bounds.center);
                 yield return Wait();
             }
 
-            // Çilek → tahta.
-            KitchenItem strawberry = counter.Items.FirstOrDefault(item => item != null && item.IsCuttable && item.gameObject.activeSelf
-                && item.slicePrefab != null && item.slicePrefab.GetComponent<KitchenIngredientItem>() != null);
-            Check(strawberry != null, "çilek bulunamadı");
-            if (strawberry == null) yield break;
-
-            yield return Grab(counter, strawberry);
-            Vector3 board = counter.cuttingBoard.position + Vector3.up * 0.03f;
-            yield return Approach(board);
-            counter.RequestGrabOrDrop(board);
-            yield return Wait();
-            Check(counter.Held == null, "çilek tahtaya bırakılamadı");
-
-            // Boş el tahtaya dokunuyor: dışarıdan da el tahtada (gövde eğilerek yetişiyor). Eğilirken nişangah aynı
-            // yerde kalmalı (tıklanan şey nişangahtaki), kamera aşağı dalmamalı.
-            Vector3 aimBefore = LowVisionRole.AimPoint;
-            yield return new WaitForSeconds(0.6f);
-            CharacterBody blindBody = player.GetComponentInChildren<CharacterBody>();
-            Vector3 eyeShift = player.playerCamera.transform.position - player.headPivot.position;
-            float aimDrift = Vector3.Distance(aimBefore, LowVisionRole.AimPoint);
-            Log($"[touch] {blindBody.Describe()} | kamera kayması {eyeShift.magnitude * 100f:0} cm, nişangah kayması {aimDrift * 100f:0.0} cm");
-            Check(blindBody.Lean <= 20.5f, "uzanırken çok eğiliyor");
-            Check(eyeShift.magnitude < 0.15f, "uzanırken kamera gözlerden kayıyor (aşağı dalıyor)");
-            Check(aimDrift < 0.02f, "uzanırken nişangahın gösterdiği yer kayıyor");
-            yield return Shot("blind_fp_touch");
-            yield return Third("blind_3p_touch", player, true);
-            yield return Near("blind_near_touch", player, LowVisionRole.AimPoint, 0.6f);
-
-            // Bıçakla doğra.
-            KitchenItem knife = counter.Items.First(item => item != null && item.kind == KitchenItemKind.Knife);
-            yield return Grab(counter, knife);
-            yield return Shot("blind_fp_knife");
-            yield return Third("blind_3p_knife", player, false);
-            yield return Approach(strawberry.transform.position);
-            for (int i = 0; i < slices; i++)
-            {
-                if (!strawberry.gameObject.activeSelf) break;
-                counter.RequestCut(strawberry.transform.position);
-                if (i == 0)
-                {
-                    yield return new WaitForSeconds(0.1f);
-                    yield return Shot("blind_fp_chop");
-                }
-
-                yield return new WaitForSeconds(0.35f);
-            }
-
-            Check(recipe.StepState(0) == RecipeStepState.Done, "adım 1 (doğra) tamamlanmadı");
-            yield return Drop(counter, new Vector3(0.65f, 0f, 0.25f));
-
-            // Süt kutusu → ölçü bardağı.
-            KitchenContainer cup = Container(counter, c => c.canPour && c.canReceive);
-            KitchenContainer bowl = Container(counter, c => c.isMixingBowl);
-            KitchenContainer carton = Container(counter, c => c.canPour && !c.canReceive && c.AmountOf(Ingredient.Milk) > 0f);
-            Check(cup != null && bowl != null && carton != null, "bardak/kase/süt kutusu bulunamadı");
-            if (cup == null || bowl == null || carton == null) yield break;
-
-            yield return Grab(counter, carton.Item);
-
-            // Bir yere değmeden taşıyor: el ve kutu göğüs önünde (ekranın sağ altında), dışarıdan da öyle.
-            // Açıkta (doğduğu yerde), önünde bir şey yokken.
-            CharacterController carrier = player.GetComponent<CharacterController>();
-            carrier.enabled = false;
-            player.transform.SetPositionAndRotation(_spawnPosition, _spawnRotation);
-            carrier.enabled = true;
-            player.FaceTowards(player.headPivot.position + _spawnRotation * Vector3.forward * 3f);
-            yield return new WaitForSeconds(0.6f);
-            Check(!LowVisionRole.Touching, "düz bakarken el bir yere değiyor sayıldı");
-            yield return Shot("blind_fp_carry");
-            yield return Third("blind_3p_carry", player, false);
-            yield return Third("blind_3p_carry_side", player, true);
-
-            yield return Pour(counter, cup, () => cup.AmountOf(Ingredient.Milk) >= milk * 0.5f);
-            yield return Shot("blind_fp_pour");
-            yield return Third("blind_3p_pour", player, false);
-            yield return Pour(counter, cup, () => cup.AmountOf(Ingredient.Milk) >= milk - 8f);
-            Log($"bardakta {cup.AmountOf(Ingredient.Milk):0} ml süt");
-            Check(recipe.StepState(1) == RecipeStepState.Done, "adım 2 (bardağa dök) tamamlanmadı");
-            // Bardağın yanına değil boş yere (ölçü bardağı -0.62, 0.25'te duruyor).
-            yield return Drop(counter, new Vector3(-0.1f, 0f, 0.36f));
-
-            // Bardak → kase.
-            yield return Grab(counter, cup.Item);
-            yield return Pour(counter, bowl, () => cup.IsEmpty);
-            Log($"kasede {bowl.AmountOf(Ingredient.Milk):0} ml süt");
-            Check(recipe.StepState(2) == RecipeStepState.Done, "adım 3 (kaseye dök) tamamlanmadı");
-            yield return Drop(counter, new Vector3(-0.4f, 0f, 0.3f));
-
-            // Dilimler → kase.
-            for (int i = 0; i < slices; i++)
-            {
-                KitchenItem slice = counter.Items.FirstOrDefault(item => item != null && item.gameObject.activeSelf && item.Ingredient != null
-                    && item.Ingredient.ingredient == Ingredient.Strawberry);
-                if (slice == null) break;
-
-                yield return Grab(counter, slice);
-                yield return Approach(bowl.Item.Center);
-                counter.RequestGrabOrDrop(bowl.Item.Center);
-                yield return Wait();
-            }
-
             yield return new WaitForSeconds(0.5f);
-            Check(recipe.StepState(3) == RecipeStepState.Done, "adım 4 (dilimler) tamamlanmadı");
-            Check(!recipe.Failed, "tarif bozuldu: " + recipe.FailReason);
-            Check(recipe.Completed, "tarif tamamlanmadı");
+            yield return Look("fridge_open", new Vector3(-3.3f, 1.5f, -0.53f), new Vector3(-4.6f, 1.15f, -0.53f));
 
-            // Art yiyeceği: domatesi al, tahtaya koy, bıçakla sonuna kadar doğra; her kesimde bir dilim çıkmalı.
-            KitchenItem tomato = counter.Items.FirstOrDefault(item => item != null && item.gameObject.activeSelf
-                && item.slicePrefabs != null && item.slicePrefabs.Length > 0 && item.name.Contains("Tomato"));
-            Check(tomato != null, "art domatesi (alınır/kesilir) bulunamadı");
-            if (tomato != null)
+            IEnumerator tomatoPlate = RunTomatoPlate(counter, player);
+            while (tomatoPlate.MoveNext()) yield return tomatoPlate.Current;
+
+            IEnumerator drops = CheckDrops(counter);
+            while (drops.MoveNext()) yield return drops.Current;
+
+            // ESC menüsü (herkesin gördüğü).
+            if (GameHud.Instance != null)
             {
-                int pieces = tomato.segments.Length;
-                yield return Grab(counter, tomato);
-                Vector3 spot = counter.cuttingBoard.position + Vector3.up * 0.03f;
-                yield return Approach(spot);
-                counter.RequestGrabOrDrop(spot);
-                yield return Wait();
-                yield return Grab(counter, knife);
-                yield return Approach(tomato.transform.position);
-                for (int i = 0; i < pieces + 1; i++)
-                {
-                    if (!tomato.gameObject.activeSelf) break;
-                    counter.RequestCut(tomato.transform.position);
-                    yield return new WaitForSeconds(0.35f);
-                    if (i == 1) yield return Shot("blind_fp_tomato");
-                }
-
-                int slicesOut = counter.Items.Count(item => item != null && item.gameObject.activeSelf && item.Ingredient != null
-                    && item.Ingredient.ingredient == Ingredient.Tomato);
-                Log($"domates: {pieces} parça, {slicesOut} dilim çıktı");
-                Check(!tomato.gameObject.activeSelf, "domates sonuna kadar kesilemedi");
-                Check(slicesOut == pieces, $"domates dilim sayısı {slicesOut} (beklenen {pieces})");
-                yield return Drop(counter, new Vector3(0.65f, 0f, 0.25f));
+                GameHud.Instance.pausePanel.SetActive(true);
+                yield return LookUi("ui_pause", new Vector3(-0.5f, 1.7f, -2.2f), counter.transform.position + Vector3.up * 0.9f);
+                GameHud.Instance.pausePanel.SetActive(false);
             }
 
             // Biraz daha oynat: efektler, karakterler, eller hata vermesin.
@@ -331,6 +233,401 @@ namespace Dishaster
             yield return Shot("blind_fp_done");
             yield return new WaitForSeconds(2f);
             Finish(_failures.Count == 0 && _errors.Count == 0, null);
+        }
+
+        // ── Domatesli tabak (ilk tarif) ──────────────────────────────────────
+
+        /// <summary>
+        /// Yığından tabak al, adaya koy; kasadan domates al, tahtaya koy, bıçakla 3 dilim; dilimleri tabağa koy →
+        /// tamamlanmalı. Sonra 4. dilim: adım kırmızı (fazla); geri alınınca yine tamam. Yığındaki alt tabak alınamıyor.
+        /// </summary>
+        IEnumerator RunTomatoPlate(KitchenCounter counter, DishasterPlayer player)
+        {
+            Recipe recipe = counter.Recipe;
+            Check(recipe.Kind == RecipeKind.TomatoPlate, "ilk tarif domatesli tabak değil");
+            Log("[tarif] " + recipe.Describe().Replace("\n", " | "));
+
+            // Tabak: en yüksek yığının en üstündeki; altındaki alınamıyor.
+            KitchenPlate[] plates = counter.Plates.Where(dish => dish != null && dish.gameObject.activeInHierarchy).ToArray();
+            Log($"[tarif] {plates.Length} tabak: " + string.Join(", ", plates.Select(dish => dish.transform.position.ToString("F2"))));
+            Check(plates.Length >= 2, "alınabilir tabak yok");
+            if (plates.Length == 0) yield break;
+
+            KitchenPlate plate = plates.OrderByDescending(dish => dish.transform.position.y).First();
+            KitchenPlate under = plates.Where(dish => dish != plate && Vector2.Distance(Flat(dish.transform.position), Flat(plate.transform.position)) < 0.05f)
+                .OrderByDescending(dish => dish.transform.position.y).FirstOrDefault();
+            if (under != null)
+            {
+                yield return Approach(under.Item.Center);
+                counter.RequestGrabOrDrop(under.Item.Center);
+                yield return Wait();
+                Check(counter.Held != under, "yığının altındaki tabak çekilip alındı");
+                Log($"[tarif] alttaki tabağa tıklandı: elde {(counter.Held != null ? counter.Held.name : "yok")}");
+            }
+
+            if (counter.Held != plate.Item)
+            {
+                if (counter.Held != null) yield return Drop(counter, new Vector3(0.7f, 0f, 0.6f));
+                yield return Grab(counter, plate.Item);
+            }
+
+            if (counter.Held == plate.Item)
+            {
+                yield return ShowGrip("plate", player);
+                yield return Drop(counter, new Vector3(-0.5f, 0f, 0.45f));
+            }
+
+            Check(counter.IsOnIsland(plate.transform.position), "tabak adaya konmadı");
+            Check(recipe.StepState(1) == RecipeStepState.Done, "adım 2 (tabak adada) tamamlanmadı");
+
+            // Domates: kasadan (karıştırılmış kasalar; hangisinde olduğu belli değil).
+            KitchenItem tomato = counter.Items.FirstOrDefault(item => item != null && item.gameObject.activeInHierarchy && item.IsCuttable
+                && item.name.StartsWith("Art_Tomato") && item.transform.parent != null && item.transform.parent.name == "Crates"
+                && !counter.IsOnIsland(item.transform.position));
+            Check(tomato != null, "kasada domates yok");
+            if (tomato == null) yield break;
+
+            yield return Grab(counter, tomato);
+            Vector3 board = counter.cuttingBoard.position + Vector3.up * (counter.boardHeight + 0.01f);
+            yield return Approach(board);
+            counter.RequestGrabOrDrop(board);
+            yield return Wait();
+            Check(counter.Held == null, "domates tahtaya bırakılamadı");
+
+            KitchenItem knife = counter.Items.First(item => item != null && item.kind == KitchenItemKind.Knife);
+            yield return Grab(counter, knife);
+            yield return Approach(tomato.transform.position);
+            int target = recipe.TargetOf(Ingredient.Tomato);
+            for (int i = 0; i < target; i++)
+            {
+                counter.RequestCut(tomato.transform.position);
+                yield return new WaitForSeconds(0.35f);
+            }
+
+            Check(recipe.StepState(0) == RecipeStepState.Done, "adım 1 (doğra) tamamlanmadı");
+            yield return Drop(counter, new Vector3(0.75f, 0f, -0.62f));
+
+            // Dilimler tabağa.
+            for (int i = 0; i < target; i++)
+            {
+                KitchenItem slice = FreeSlice(counter, plate);
+                Check(slice != null, "tabağa konacak dilim yok");
+                if (slice == null) break;
+
+                yield return Grab(counter, slice);
+                yield return Approach(plate.Item.Center + Vector3.up * 0.02f, plate.Item);
+                counter.RequestGrabOrDrop(plate.Item.Center + Vector3.up * 0.03f);
+                yield return Wait();
+                Check(plate.CountOf(Ingredient.Tomato) == i + 1, $"{i + 1}. dilim tabağa konmadı (tabakta {plate.CountOf(Ingredient.Tomato)})");
+            }
+
+            yield return new WaitForSeconds(0.4f);
+            Log($"[tarif] tabakta {plate.CountOf(Ingredient.Tomato)} dilim domates; tamamlandı {recipe.Completed}, bozuldu {recipe.Failed}");
+            Check(recipe.StepState(2) == RecipeStepState.Done, "adım 3 (3 dilim tabakta) tamamlanmadı");
+            Check(recipe.Completed && !recipe.Failed, "domatesli tabak tamamlanmadı");
+
+            Vector3 plateTop = plate.Item.Center;
+            yield return Look("plate_tomatoes", plateTop + new Vector3(0.05f, 0.55f, -0.35f), plateTop);
+            yield return ShowCard("ui_card_done", plateTop);
+            yield return LookUi("ui_result", plateTop + new Vector3(0.3f, 0.9f, -1.3f), plateTop);
+
+            // Fazlası: bir dilim daha kes, tabağa koy → adım kırmızı; geri al → yine tamam.
+            if (tomato.gameObject.activeSelf)
+            {
+                yield return Grab(counter, knife);
+                yield return Approach(tomato.transform.position);
+                counter.RequestCut(tomato.transform.position);
+                yield return new WaitForSeconds(0.4f);
+                yield return Drop(counter, new Vector3(0.75f, 0f, -0.62f));
+
+                KitchenItem extra = FreeSlice(counter, plate);
+                if (extra != null)
+                {
+                    yield return Grab(counter, extra);
+                    yield return Approach(plate.Item.Center + Vector3.up * 0.02f, plate.Item);
+                    counter.RequestGrabOrDrop(plate.Item.Center + Vector3.up * 0.03f);
+                    yield return Wait();
+                    Check(recipe.StepState(2) == RecipeStepState.Over, "tabakta 4 dilim varken adım kırmızı (fazla) değil");
+                    yield return ShowCard("ui_card_over", plateTop);
+
+                    yield return Grab(counter, extra);
+                    Check(counter.Held == extra, "tabaktaki dilim geri alınamadı");
+                    Check(plate.CountOf(Ingredient.Tomato) == target && recipe.StepState(2) == RecipeStepState.Done, "dilim geri alınınca adım düzelmedi");
+                    yield return Drop(counter, new Vector3(0.75f, 0f, -0.3f));
+                }
+            }
+        }
+
+        static Vector2 Flat(Vector3 point) => new Vector2(point.x, point.z);
+
+        /// <summary>Tabakta olmayan, ortadaki domates dilimi.</summary>
+        static KitchenItem FreeSlice(KitchenCounter counter, KitchenPlate plate)
+        {
+            return counter.Items.FirstOrDefault(item => item != null && item.gameObject.activeInHierarchy && item.Ingredient != null
+                && item.Ingredient.ingredient == Ingredient.Tomato && !plate.Holds(item) && item != counter.Held);
+        }
+
+        /// <summary>Tarif kartı (normalde sadece Bilmiyorum görüyor): çekim için bir an açılıyor.</summary>
+        IEnumerator ShowCard(string name, Vector3 focus)
+        {
+            RecipeHud hud = FindObjectOfType<RecipeHud>();
+            if (hud == null || _shots == null) yield break;
+
+            bool was = hud.recipePanel.activeSelf;
+            hud.recipePanel.SetActive(true);
+            yield return null;
+            yield return LookUi(name, focus + new Vector3(0.3f, 0.9f, -1.3f), focus);
+            hud.recipePanel.SetActive(was);
+        }
+
+        // ── Çömelme ve kasaya uzanma ────────────────────────────────────────
+
+        /// <summary>
+        /// Ctrl: kamera ve karakter aynı kadar iniyor, ayaklar yerde kalıyor; çömelerek yürüyor; kalkınca eski haline
+        /// dönüyor.
+        /// </summary>
+        IEnumerator CheckCrouch(DishasterPlayer player)
+        {
+            CharacterController controller = player.GetComponent<CharacterController>();
+            controller.enabled = false;
+            player.transform.SetPositionAndRotation(_spawnPosition, _spawnRotation);
+            controller.enabled = true;
+            player.FaceTowards(player.headPivot.position + _spawnRotation * Vector3.forward * 3f);
+            yield return new WaitForSeconds(0.6f);
+
+            CharacterBody body = player.GetComponentInChildren<CharacterBody>();
+            float standEye = player.playerCamera.transform.position.y;
+            float standFeet = Feet(player);
+            float standHeight = controller.height;
+
+            player.SetCrouchForTest(true);
+            yield return new WaitForSeconds(0.7f);
+            float eye = player.playerCamera.transform.position.y;
+            float feet = Feet(player);
+            Log($"[crouch] göz {standEye:0.00} → {eye:0.00} m (iniş {(standEye - eye) * 100f:0} cm, beklenen {player.CrouchDrop * 100f:0}), " +
+                $"kalça {body.Squat * 100f:0} cm, ayak {standFeet:0.00} → {feet:0.00}, kapsül {standHeight:0.00} → {controller.height:0.00}");
+            Check(player.CrouchAmount > 0.99f, "çömelme tamamlanmadı");
+            Check(Mathf.Abs(standEye - eye - player.CrouchDrop) < 0.04f, "çömelince kamera beklenen kadar inmedi");
+            Check(Mathf.Abs(body.Squat - player.CrouchDrop) < 0.02f, "çömelince karakter kamerayla birlikte inmedi");
+            Check(Mathf.Abs(feet - standFeet) < 0.03f, "çömelince ayaklar yerden kalktı ya da yere gömüldü");
+            Check(controller.height < standHeight - 0.3f, "çömelince kapsül kısalmadı");
+            yield return Whole("blind_full_crouch", player, false);
+            yield return Whole("blind_full_crouch_side", player, true);
+
+            // Çömelerek yürüme, odanın ortasına doğru: kapsülü test sürüyor (animasyon konum farkından).
+            // Önü en açık yön (kapsülün süpürdüğü yol).
+            Vector3 walk = player.transform.forward;
+            float open = 0f;
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 direction = Quaternion.Euler(0f, 45f * i, 0f) * Vector3.forward;
+                Vector3 bottom = player.transform.position + Vector3.down * 0.4f;
+                float free = Physics.CapsuleCast(bottom, bottom + Vector3.up * 0.6f, controller.radius * 0.9f, direction, out RaycastHit hit, 4f,
+                    Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore) ? hit.distance : 4f;
+                if (free <= open) continue;
+                open = free;
+                walk = direction;
+            }
+            player.transform.rotation = Quaternion.LookRotation(walk);
+            Vector3 walkStart = player.transform.position;
+            float until = Time.time + 1.4f;
+            bool shot = false;
+            float lowest = float.PositiveInfinity;
+            float highest = float.NegativeInfinity;
+            while (Time.time < until)
+            {
+                controller.Move(walk * player.crouchSpeed * Time.deltaTime + Vector3.down * 0.2f * Time.deltaTime);
+                float y = Feet(player);
+                lowest = Mathf.Min(lowest, y);
+                highest = Mathf.Max(highest, y);
+                if (!shot && Time.time > until - 0.6f)
+                {
+                    shot = true;
+                    yield return Whole("blind_full_crouch_walk_side", player, true);
+                }
+
+                yield return null;
+            }
+
+            Log($"[crouch] çömelerek {Vector3.Distance(walkStart, player.transform.position):0.00} m yürüdü; en alçak ayak {lowest:0.00}, en yüksek ayak {highest:0.00}");
+            Check(lowest > standFeet - 0.05f, "çömelerek yürürken ayak yere gömülüyor");
+
+            player.SetCrouchForTest(false);
+            yield return new WaitForSeconds(0.8f);
+            float back = player.playerCamera.transform.position.y;
+            Log($"[crouch] kalkınca göz {back:0.00} m, kalça {body.Squat * 100f:0} cm, kapsül {controller.height:0.00}");
+            Check(Mathf.Abs(back - standEye) < 0.03f, "kalkınca kamera eski yüksekliğine dönmedi");
+            Check(body.Squat < 0.01f, "kalkınca karakter çömelik kaldı");
+            Check(Mathf.Abs(controller.height - standHeight) < 0.01f, "kalkınca kapsül eski boyuna dönmedi");
+        }
+
+        /// <summary>Oyuncunun tamamı (ayaklar dahil), önden ya da yandan: çömelme ve dizler görünsün.</summary>
+        IEnumerator Whole(string name, DishasterPlayer player, bool side)
+        {
+            if (_shots == null) yield break;
+
+            CharacterBody body = player.GetComponentInChildren<CharacterBody>();
+            Renderer[] bodyRenderers = body != null ? body.GetComponentsInChildren<Renderer>(true) : new Renderer[0];
+            var modes = new UnityEngine.Rendering.ShadowCastingMode[bodyRenderers.Length];
+            for (int i = 0; i < bodyRenderers.Length; i++)
+            {
+                modes[i] = bodyRenderers[i].shadowCastingMode;
+                bodyRenderers[i].shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            }
+
+            var cameraObject = new GameObject("WholeCamera");
+            var view = cameraObject.AddComponent<Camera>();
+            view.enabled = false;
+            view.fieldOfView = 45f;
+            view.nearClipPlane = 0.05f;
+            Transform root = player.transform;
+            Vector3 direction = side ? root.right : root.forward;
+            Vector3 feet = root.position + Vector3.down * 1f;
+            cameraObject.transform.position = feet + direction * 3.2f + Vector3.up * 0.9f;
+            cameraObject.transform.LookAt(feet + Vector3.up * 0.75f);
+
+            yield return null;
+            yield return Capture(view, name);
+            yield return null;
+            Destroy(cameraObject);
+            for (int i = 0; i < bodyRenderers.Length; i++) bodyRenderers[i].shadowCastingMode = modes[i];
+        }
+
+        static float Feet(DishasterPlayer player)
+        {
+            Transform left = CharacterBody.FindBone(player.transform, "LeftFoot");
+            Transform right = CharacterBody.FindBone(player.transform, "RightFoot");
+            return left != null && right != null ? Mathf.Min(left.position.y, right.position.y) : 0f;
+        }
+
+        /// <summary>
+        /// Yerdeki (ön sıra) ve arka sıradaki kasaya ayakta, kasaların önünden bakınca el değiyor ve yetişiyor
+        /// (karakter eğilip çömeliyor); kasadaki yiyecek alınıyor.
+        /// </summary>
+        IEnumerator CheckCrateReach(KitchenCounter counter, DishasterPlayer player)
+        {
+            KitchenCrate[] crates = FindObjectsOfType<KitchenCrate>().OrderBy(crate => crate.transform.position.y).ToArray();
+            if (crates.Length == 0) yield break;
+
+            CharacterBody body = player.GetComponentInChildren<CharacterBody>();
+            foreach ((KitchenCrate crate, string label) in new[] { (crates[crates.Length / 4], "ön"), (crates[crates.Length - 2], "arka") })
+            {
+                // Kasadaki, önden görülen bir yiyecek (önündeki kasanın duvarı ya da uzun havuç ışını kesebiliyor): ışının
+                // değdiği alınmalı.
+                KitchenItem[] candidates = counter.Items
+                    .Where(item => item != null && item.gameObject.activeInHierarchy && item.transform.parent != null && item.transform.parent.name == "Crates")
+                    .OrderBy(item => Vector3.Distance(item.transform.position, crate.transform.position))
+                    .Take(5).ToArray();
+                KitchenItem food = null;
+                foreach (KitchenItem candidate in candidates)
+                {
+                    yield return Approach(candidate.Center, candidate);
+                    yield return new WaitForSeconds(0.9f);
+                    Transform eye = player.playerCamera.transform;
+                    if (!Physics.Raycast(eye.position, eye.forward, out RaycastHit seen, LowVisionRole.ReachAlong(eye.forward), Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide)) continue;
+
+                    food = seen.collider.GetComponentInParent<KitchenItem>();
+                    if (food != null) break;
+                }
+
+                Check(food != null, $"{label} sıradaki kasada önden görülen yiyecek yok");
+                if (food == null) continue;
+                float distance = Vector3.Distance(player.headPivot.position, food.Center);
+                Log($"[reach] {label} sıradaki kasa ({food.name}): değiyor {LowVisionRole.Touching}, gözden {distance:0.00} m, " +
+                    $"avuç farkı {body.ReachGap * 100f:0} cm | {body.Describe()}");
+                Check(LowVisionRole.Touching, $"{label} sıradaki kasadaki yiyeceğe el değmiyor");
+                // Avucun ortası hedefte ya da parmak boyu kadar yakınında (en uzak köşede, kısa kollu Aşçı parmak uçlarıyla değiyor).
+                Check(body.ReachGap < 0.10f, $"{label} sıradaki kasaya el yetişmiyor ({body.ReachGap * 100f:0} cm)");
+                string tag = label == "ön" ? "front" : "back";
+                yield return Shot($"blind_fp_reach_{tag}");
+                LowVisionEffect effect = player.playerCamera.GetComponent<LowVisionEffect>();
+                if (effect != null) effect.enabled = false;
+                yield return Shot($"blind_fp_reach_{tag}_plain");
+                if (effect != null) effect.enabled = true;
+                yield return Third($"blind_3p_reach_{tag}", player, true);
+                yield return Near($"blind_near_reach_{tag}", player, LowVisionRole.Hand.position, 0.7f);
+
+                counter.RequestGrabOrDrop(LowVisionRole.AimPoint);
+                yield return Wait();
+                Check(counter.Held == food, $"{label} sıradaki kasadaki yiyecek alınamadı");
+                if (counter.Held != food) continue;
+
+                // Yerine geri: kasanın içine bırakılıyor.
+                Vector3 back = food.Center;
+                yield return new WaitForSeconds(0.3f);
+                counter.RequestGrabOrDrop(LowVisionRole.AimPoint);
+                yield return Wait();
+                Check(counter.Held == null, $"{label} sıradaki kasaya geri bırakılamadı");
+                Log($"[reach] {food.name} kasaya geri bırakıldı: {food.transform.position.ToString("F2")} (alındığı yer {back.ToString("F2")})");
+            }
+        }
+
+        // ── Bırakma: adanın dışında ─────────────────────────────────────────
+
+        int _refused;
+
+        void OnKitchenEvent(KitchenEventMessage message, KitchenItem item)
+        {
+            if (message.type == KitchenEventType.Refused) _refused++;
+        }
+
+        /// <summary>
+        /// Kilerdeki tezgaha, buzdolabının alt rafına ve kasaya bırakılıyor (düz yüzey, üstü açık); adanın yan
+        /// yüzüne (dik, altı boş) bırakılamıyor: elde kalıyor, "olmaz" sesi.
+        /// </summary>
+        IEnumerator CheckDrops(KitchenCounter counter)
+        {
+            KitchenCounter.Applied += OnKitchenEvent;
+            // Ön sıradan (yerdeki kasalar) bir yiyecek: arkadaki uzun havuçlar ışını kesmesin.
+            KitchenItem onion = counter.Items
+                .Where(item => item != null && item.gameObject.activeInHierarchy && item.IsCuttable && item.transform.parent != null
+                    && item.transform.parent.name == "Crates" && item.transform.position.y < 0.2f && !item.name.StartsWith("Art_Carrot"))
+                .OrderBy(item => Mathf.Abs(item.transform.position.x - 3f)).FirstOrDefault();
+            Check(onion != null, "ön sıradaki kasada yiyecek yok");
+            if (onion == null) yield break;
+
+            Vector3 home = onion.transform.position;
+            yield return Grab(counter, onion);
+
+            var spots = new (string label, Vector3 point)[]
+            {
+                ("kilerdeki tezgah", new Vector3(4.55f, 0.92f, 0.3f)),
+                ("buzdolabının alt rafı", new Vector3(-4.42f, 0.5f, -0.45f)),
+                ("kasa", home + Vector3.up * 0.02f),
+            };
+
+            foreach ((string label, Vector3 point) in spots)
+            {
+                if (counter.Held != onion)
+                {
+                    yield return Grab(counter, onion);
+                    if (counter.Held != onion) break;
+                }
+
+                yield return Approach(point);
+                counter.RequestGrabOrDrop(LowVisionRole.Touching ? LowVisionRole.AimPoint : point);
+                yield return Wait();
+                Log($"[drop] {label}: {(counter.Held == null ? "bırakıldı " + onion.transform.position.ToString("F2") : "bırakılamadı: " + counter.LastRefusal)} (hedef {point.ToString("F2")})");
+                Check(counter.Held == null, $"{label} üstüne bırakılamadı");
+                Check(counter.Held != null || Vector3.Distance(onion.transform.position, point) < 0.4f, $"{label}: çok uzağa bırakıldı");
+                if (label == "buzdolabının alt rafı") yield return Look("fridge_drop", new Vector3(-3.6f, 1.2f, -0.45f), onion.transform.position);
+            }
+
+            // Adanın yan yüzü: altında 25 cm'den yakın düz yer yok.
+            if (counter.Held != onion) yield return Grab(counter, onion);
+            if (counter.Held == onion)
+            {
+                int before = _refused;
+                Vector3 side = counter.transform.TransformPoint(new Vector3(counter.topSize.x / 2f + 0.02f, 0.75f, 0f));
+                counter.RequestGrabOrDrop(side);
+                yield return Wait();
+                Log($"[drop] adanın yan yüzü: {(counter.Held == onion ? "elde kaldı" : "bırakıldı " + onion.transform.position.ToString("F2"))}, olmaz sesi {_refused - before}");
+                Check(counter.Held == onion, "dik yüzeye bırakılabildi");
+                Check(_refused > before, "bırakılamayınca \"olmaz\" olayı gelmedi");
+                yield return Drop(counter, new Vector3(0.75f, 0f, 0.62f));
+            }
+
+            KitchenCounter.Applied -= OnKitchenEvent;
         }
 
         // ── Bilmiyorum: defter duruşları ve yürüme ───────────────────────────
@@ -344,6 +641,10 @@ namespace Dishaster
             yield return new WaitForSeconds(1f);
             Measure("hold", player, notebook);
             yield return Shot("mute_fp_hold");
+            bool prompt = notebook.prompt.activeSelf;
+            notebook.prompt.SetActive(true);
+            yield return ShotUi("mute_ui_hold");
+            notebook.prompt.SetActive(prompt);
             yield return Third("mute_3p_hold", player, false);
             yield return Near("mute_near_hold", player, notebook.LeftGripPoint, -0.6f);
 
@@ -359,6 +660,10 @@ namespace Dishaster
             yield return new WaitForSeconds(0.3f);
             Measure("draw", player, notebook);
             yield return Shot("mute_fp_draw");
+            bool toolbar = notebook.toolbar.activeSelf;
+            notebook.toolbar.SetActive(true);
+            yield return ShotUi("mute_ui_draw");
+            notebook.toolbar.SetActive(toolbar);
             yield return Third("mute_3p_draw", player, false);
             yield return Near("mute_near_draw", player, notebook.PenGripPoint, 0.6f);
 
@@ -611,6 +916,13 @@ namespace Dishaster
             Log($"[gözlem] {MonkeyRoles.NameOf(watched.role)} boşta kol oynaması: sol {armL * 100f:0.0} cm, sağ {armR * 100f:0.0} cm; sol bilek {lefts[0].ToString("F2")}, sağ bilek {rights[0].ToString("F2")}");
             Check(armL < 0.03f && armR < 0.03f, MonkeyRoles.NameOf(watched.role) + " boştayken kolu oynuyor");
 
+            // Görmedim Ctrl'le çömelince burada da çömeliyor mu (sunucudan gelen): fotoğraf aralarında da izleniyor.
+            float crouchSquat = -1f;
+            void WatchCrouch()
+            {
+                if (watched.IsCrouching && watched.CrouchAmount > 0.99f) crouchSquat = Mathf.Max(crouchSquat, watchedBody.Squat);
+            }
+
             float snapMax = 0f;
             float snapSum = 0f;
             int snapCount = 0;
@@ -622,6 +934,8 @@ namespace Dishaster
                 float next = Time.time + 2.5f;
                 while (Time.time < next)
                 {
+                    WatchCrouch();
+
                     // Defter duruşu değişince yakın çekim: dönüşün ortası ve yerine oturmuş hali.
                     NotebookRole watchedBook = NotebookRole.Instance;
                     if (watchedBook != null && watchedBook.Owner == watched && watched != null)
@@ -646,7 +960,9 @@ namespace Dishaster
                         }
                     }
 
-                    if (watchedBody != null && watchedBody.LastSnapDistance > 0f)
+                    // Sadece yetişilebilecek hedeflerde (raf arkası gibi kolun hiç yetişmediği yerde iki tarafta da eşya avuca
+                    // oturuyor; ölçülen, uzaktaki IK'nın aynı yere varıp varmadığı).
+                    if (watchedBody != null && watchedBody.LastSnapDistance > 0f && watchedBody.RightReachable)
                     {
                         snapMax = Mathf.Max(snapMax, watchedBody.LastSnapDistance);
                         snapSum += watchedBody.LastSnapDistance;
@@ -671,7 +987,7 @@ namespace Dishaster
 
                 var cameraObject = new GameObject("ObserverCamera");
                 var view = cameraObject.AddComponent<Camera>();
-                view.depth = 100f;
+                view.enabled = false;
                 view.fieldOfView = 50f;
                 view.nearClipPlane = 0.05f;
                 Transform root = other.transform;
@@ -680,8 +996,7 @@ namespace Dishaster
                 cameraObject.transform.LookAt(root.position + Vector3.up * 0.25f);
 
                 yield return null;
-                yield return new WaitForEndOfFrame();
-                if (_shots != null) ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(_shots, $"observe_{shot:00}.png"));
+                yield return Capture(view, $"observe_{shot:00}");
                 yield return null;
                 Destroy(cameraObject);
             }
@@ -691,6 +1006,33 @@ namespace Dishaster
             float mean = snapCount > 0 ? snapSum / snapCount : 0f;
             Log($"[gözlem] elde tutarken avuç farkı: ortalama {mean * 100f:0.0} cm, %95 {p95 * 100f:0.0} cm, en çok {snapMax * 100f:0.0} cm ({snapCount} kare)");
             Check(mean < 0.05f && p95 < 0.12f, "uzaktan eşya/defter ele yetişmiyor (iki taraf eşleşmiyor)");
+
+            // Görmedim Ctrl'le çömelince burada da çömeliyor mu (sunucudan gelen), kalkınca kalkıyor mu.
+            if (watched.role == MonkeyRoles.LowVision)
+            {
+                float until = Time.time + 180f;
+                while (Time.time < until && crouchSquat < 0f)
+                {
+                    WatchCrouch();
+                    yield return null;
+                }
+
+                if (watched.IsCrouching)
+                {
+                    yield return new WaitForSeconds(0.3f);
+                    yield return Third("observe_crouch", watched, true);
+                }
+
+                Log($"[gözlem] uzaktan çömelme: {(crouchSquat >= 0f ? "görüldü" : "görülmedi")}, kalça {crouchSquat * 100f:0} cm (beklenen {watched.CrouchDrop * 100f:0})");
+                Check(crouchSquat >= 0f && Mathf.Abs(crouchSquat - watched.CrouchDrop) < 0.03f, "çömelme uzaktaki oyuncuya gitmiyor");
+
+                until = Time.time + 20f;
+                while (Time.time < until && watched.IsCrouching) yield return null;
+                yield return new WaitForSeconds(0.6f);
+                Log($"[gözlem] uzaktan kalkış: kalça {watchedBody.Squat * 100f:0} cm");
+                Check(!watched.IsCrouching, "uzaktaki oyuncu çömelik kaldı");
+            }
+
             Finish(_failures.Count == 0 && _errors.Count == 0, null);
         }
 
@@ -698,12 +1040,353 @@ namespace Dishaster
 
         IEnumerator Shot(string name)
         {
+            if (_shots == null || _player == null) yield break;
+
+            yield return Capture(_player.playerCamera, name);
+        }
+
+        // Pencere olmadan da (-batchmode, ekrana hiçbir şey gelmeden) çekilebilsin: kamera bir RenderTexture'a
+        // çiziliyor, PNG'ye yazılıyor. İstek LateUpdate'te (kare sonunda) karşılanıyor.
+        readonly List<(Camera view, string name, bool ui)> _pendingShots = new List<(Camera view, string name, bool ui)>();
+
+        IEnumerator Capture(Camera view, string name, bool ui = false)
+        {
+            if (_shots == null || view == null) yield break;
+
+            _pendingShots.Add((view, name, ui));
+            while (_pendingShots.Count > 0) yield return null;
+        }
+
+        void LateUpdate()
+        {
+            if (_pendingShots.Count == 0) return;
+
+            foreach ((Camera view, string name, bool ui) in _pendingShots)
+                if (view != null) Render(view, name, ui);
+            _pendingShots.Clear();
+        }
+
+        /// <summary>Oyuncunun kamerası, arayüzle birlikte (ekrandaki gibi).</summary>
+        IEnumerator ShotUi(string name)
+        {
+            if (_shots == null || _player == null) yield break;
+
+            yield return Capture(_player.playerCamera, name, true);
+        }
+
+        /// <summary>Bir yerden bakan geçici kamera, arayüzle birlikte (görmeyenin karanlık ekranı yerine mutfak görünsün).</summary>
+        IEnumerator LookUi(string name, Vector3 from, Vector3 at)
+        {
             if (_shots == null) yield break;
 
-            yield return new WaitForEndOfFrame();
-            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(_shots, name + ".png"));
+            var cameraObject = new GameObject("LookUiCamera");
+            var view = cameraObject.AddComponent<Camera>();
+            view.enabled = false;
+            view.fieldOfView = 55f;
+            view.nearClipPlane = 0.03f;
+            cameraObject.transform.position = from;
+            cameraObject.transform.LookAt(at);
+
             yield return null;
+            yield return Capture(view, name, true);
             yield return null;
+            Destroy(cameraObject);
+        }
+
+        void Render(Camera view, string name, bool ui)
+        {
+            // Pencere yok: üstte çizilen arayüz (overlay) kameraya bağlanıp onunla çiziliyor, sonra geri alınıyor.
+            var switched = new List<(Canvas canvas, RenderMode mode, Camera camera, float plane)>();
+            if (ui)
+            {
+                foreach (Canvas canvas in FindObjectsOfType<Canvas>())
+                {
+                    if (!canvas.isRootCanvas || canvas.renderMode != RenderMode.ScreenSpaceOverlay) continue;
+
+                    switched.Add((canvas, canvas.renderMode, canvas.worldCamera, canvas.planeDistance));
+                    canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                    canvas.worldCamera = view;
+                    canvas.planeDistance = view.nearClipPlane + 0.02f + 0.001f * (100 - Mathf.Clamp(canvas.sortingOrder, 0, 100));
+                }
+
+                // Teşhis: hangi arayüz parçası çok büyük ağ üretiyor.
+                foreach ((Canvas canvas, RenderMode _, Camera _, float _) in switched)
+                {
+                    foreach (UnityEngine.UI.Graphic graphic in canvas.GetComponentsInChildren<UnityEngine.UI.Graphic>())
+                    {
+                        try
+                        {
+                            graphic.Rebuild(UnityEngine.UI.CanvasUpdate.PreRender);
+                        }
+                        catch (System.Exception exception)
+                        {
+                            Log($"[ui] {canvas.name}/{graphic.name} ({graphic.GetType().Name}, {graphic.rectTransform.rect.size}) ağ kurulamadı: {exception.Message}");
+                        }
+                    }
+                }
+
+                Canvas.ForceUpdateCanvases();
+            }
+
+            const int width = 1280;
+            const int height = 720;
+            RenderTexture target = RenderTexture.GetTemporary(width, height, 24);
+            RenderTexture previousTarget = view.targetTexture;
+            RenderTexture previousActive = RenderTexture.active;
+
+            view.targetTexture = target;
+            view.Render();
+            RenderTexture.active = target;
+            var texture = new Texture2D(width, height, TextureFormat.RGB24, false);
+            texture.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+            texture.Apply();
+
+            view.targetTexture = previousTarget;
+            RenderTexture.active = previousActive;
+            RenderTexture.ReleaseTemporary(target);
+            System.IO.File.WriteAllBytes(System.IO.Path.Combine(_shots, name + ".png"), texture.EncodeToPNG());
+            Destroy(texture);
+
+            foreach ((Canvas canvas, RenderMode mode, Camera camera, float plane) in switched)
+            {
+                canvas.renderMode = mode;
+                canvas.worldCamera = camera;
+                canvas.planeDistance = plane;
+            }
+        }
+
+        /// <summary>
+        /// Tutuşların çekimi: bıçak (göğüs önünde ve tahtaya uzanmışken), avuçta biber ve domates, yandan kavanoz.
+        /// Her biri sonra tezgaha bırakılıyor (tarif akışı onları oradan da bulabiliyor).
+        /// </summary>
+        IEnumerator ShowGrips(KitchenCounter counter, DishasterPlayer player)
+        {
+            if (_shots == null) yield break;
+
+            KitchenItem knife = counter.Items.FirstOrDefault(item => item != null && item.kind == KitchenItemKind.Knife);
+            if (knife != null)
+            {
+                yield return Grab(counter, knife);
+                if (counter.Held == knife)
+                {
+                    yield return ShowGrip("knife", player);
+                    Vector3 board = counter.cuttingBoard.position + Vector3.up * (counter.boardHeight + 0.01f);
+                    yield return Approach(board);
+                    yield return new WaitForSeconds(0.6f);
+                    Log($"[grip] bıçak tahtada: {player.GetComponentInChildren<CharacterBody>().Describe()}");
+                    yield return Near("blind_near_knife_board", player, LowVisionRole.Hand.position, 0.6f);
+                    yield return Near("blind_near_knife_board_left", player, LowVisionRole.Hand.position, -0.6f);
+                    yield return Third("blind_3p_knife_board_side", player, true);
+                    counter.RequestCut(board);
+                    yield return new WaitForSeconds(0.12f);
+                    yield return Near("blind_near_knife_chop", player, LowVisionRole.Hand.position, 0.6f);
+                    yield return new WaitForSeconds(0.3f);
+                    yield return Drop(counter, new Vector3(0.3f, 0f, 0.3f));
+                }
+            }
+
+            // Kiler ve buzdolabındakiler ulaşılır olsun diye önce tezgahın önüne konuyor (sadece test).
+            string[] names = { "Pepper", "Tomato", "SpiceJar", "MilkCarton", "MeasuringCup" };
+            for (int i = 0; i < names.Length; i++)
+            {
+                string wanted = names[i];
+                KitchenItem extra = counter.Items.FirstOrDefault(item => item != null && item.gameObject.activeSelf && item.name.Contains(wanted));
+                if (extra == null) continue;
+
+                extra.transform.position = counter.transform.TransformPoint(new Vector3(-0.75f + 0.3f * i, counter.topHeight, 0.62f));
+                yield return null;
+                yield return Grab(counter, extra);
+                if (counter.Held != extra) continue;
+                yield return ShowGrip(wanted.ToLowerInvariant(), player);
+                // Ada tarif için boş kalsın: kilerdeki tezgaha, yan yana (adanın dışına bırakma da böylece deneniyor).
+                yield return DropAt(counter, new Vector3(4.4f, 0.92f, 0.9f + 0.4f * i));
+            }
+        }
+
+        /// <summary>
+        /// Kiler ve ada: adada sadece aletler, ekmek buzdolabında, kasaların içeriği karışık (hangi kasada ne var),
+        /// kasaların üstüne zıplanamıyor (önden ve açık yanından), raftaki kavanoz alınıyor ve elde bir ara kapağı düşüyor.
+        /// </summary>
+        IEnumerator ShowPantry(KitchenCounter counter, DishasterPlayer player)
+        {
+            string[] onIsland = counter.Items
+                .Where(item => item != null && item.gameObject.activeSelf && OnIsland(counter, item.transform.position))
+                .Select(item => item.name).ToArray();
+            Log("[pantry] adada: " + string.Join(", ", onIsland));
+            Check(onIsland.Length == 3 && !onIsland.Any(name => name.Contains("Bread")), "adada aletlerden başka eşya var");
+
+            KitchenItem bread = counter.Items.FirstOrDefault(item => item != null && item.name.StartsWith("Art_Bread"));
+            GameObject fridge = GameObject.Find("Fridge");
+            Check(bread != null && fridge != null && bread.transform.IsChildOf(fridge.transform), "ekmek buzdolabında değil");
+            if (bread != null) Log($"[pantry] ekmek: {bread.transform.position.ToString("F2")}");
+
+            KitchenCrate[] crates = FindObjectsOfType<KitchenCrate>()
+                .OrderBy(crate => crate.transform.position.y).ThenBy(crate => crate.transform.position.x).ToArray();
+            IEnumerable<string> contents = crates.Select(crate => counter.Items.Where(item => item != null)
+                .OrderBy(item => Vector3.Distance(item.transform.position, crate.transform.position)).First().name.Split(' ')[0].Replace("Art_", ""));
+            Log($"[pantry] {crates.Length} kasa (önce ön sıra batıdan doğuya, sonra arka sıra): " + string.Join(", ", contents));
+            Check(crates.Length == 11, "kasa sayısı 11 değil");
+
+            KitchenItem[] berries = counter.Items.Where(item => item != null && item.name.StartsWith("Art_Strawberry")).ToArray();
+            Log($"[pantry] {berries.Length} çilek: " + string.Join(", ", berries.Select(item => item.transform.position.ToString("F2"))));
+            Check(berries.Length == 6 && berries.All(item => item.transform.parent != null && item.transform.parent.name == "Crates"), "çilekler kasada değil");
+            Check(berries.All(item => crates.Any(crate => Vector3.Distance(Flat(item.transform.position), Flat(crate.transform.position)) < 0.35f)), "çilekler bir kasanın içinde değil");
+            Check(counter.Plates.Count >= 2, "alınabilir tabak yok");
+
+            yield return Look("pantry_crates", new Vector3(3.0f, 1.7f, -0.8f), new Vector3(3.0f, 0.25f, -2.5f));
+            yield return Look("pantry_crates_west", new Vector3(0.3f, 1.5f, -1.3f), new Vector3(2.0f, 0.25f, -2.5f));
+            yield return Look("island_top", new Vector3(-0.5f, 2.1f, -1.0f), counter.transform.position + Vector3.up * 0.9f);
+            yield return Look("spice_shelf", new Vector3(3.5f, 1.75f, 1.5f), new Vector3(4.72f, 1.6f, 1.5f));
+
+            yield return TryClimb(player, new Vector3(3.3f, 1.05f, -1.4f), Vector3.back, "önden");
+            yield return TryClimb(player, new Vector3(0.6f, 1.05f, -2.3f), Vector3.right, "yandan");
+
+            // Raftaki kavanoz (tezgaha taşımadan): alınıyor, elde bir ara kapağı düşüyor.
+            KitchenItem jar = counter.Items.FirstOrDefault(item => item != null && item.name.StartsWith("SpiceJar") && item.HasLid);
+            Check(jar != null, "kapaklı kavanoz yok");
+            if (jar == null) yield break;
+
+            yield return Grab(counter, jar);
+            if (counter.Held != jar) yield break;
+
+            // Kavanoz elde, doğduğu yere dönüp düz bakıyor: kapak açık yere düşsün.
+            CharacterController controller = player.GetComponent<CharacterController>();
+            controller.enabled = false;
+            player.transform.SetPositionAndRotation(_spawnPosition, _spawnRotation);
+            controller.enabled = true;
+            player.FaceTowards(player.headPivot.position + _spawnRotation * Vector3.forward * 3f);
+            yield return new WaitForSeconds(0.4f);
+            yield return Near("blind_near_jar_lid", player, LowVisionRole.Hand.position, 0.6f);
+
+            float until = Time.time + 8f;
+            while (jar.HasLid && Time.time < until) yield return null;
+            Check(!jar.HasLid, "kavanozun kapağı elde düşmedi");
+            yield return new WaitForSeconds(1.5f);
+
+            KitchenLid lid = FindObjectOfType<KitchenLid>();
+            if (lid != null)
+            {
+                Vector3 at = lid.transform.position;
+                Log($"[pantry] {jar.name} kapağı düştü, şimdi {at.ToString("F2")}");
+                yield return Look("lid_fallen", at + Vector3.up * 0.9f + player.transform.right * 0.45f - player.transform.forward * 0.3f, at);
+            }
+
+            yield return Near("blind_near_jar_open", player, LowVisionRole.Hand.position, 0.6f);
+            yield return Third("blind_3p_jar_open", player, true);
+            yield return Drop(counter, new Vector3(0.6f, 0f, 0.45f));
+        }
+
+        /// <summary>Ölçü bardağı kasenin ortasına bakılarak bırakılınca kasenin içine girmiyor, yanına konuyor.</summary>
+        IEnumerator CheckNoOverlap(KitchenCounter counter)
+        {
+            KitchenItem cup = Container(counter, container => container.canPour && container.canReceive)?.Item;
+            KitchenItem bowl = Container(counter, container => container.isMixingBowl)?.Item;
+            Check(cup != null && bowl != null, "ölçü bardağı ya da kase yok");
+            if (cup == null || bowl == null) yield break;
+
+            yield return Grab(counter, cup);
+            if (counter.Held != cup) yield break;
+
+            yield return Approach(bowl.Center, bowl);
+            counter.RequestGrabOrDrop(LowVisionRole.AimPoint);
+            yield return Wait();
+
+            Physics.SyncTransforms();
+            Bounds cupBox = cup.GetComponent<BoxCollider>().bounds;
+            Bounds bowlBox = bowl.GetComponent<BoxCollider>().bounds;
+            cupBox.Expand(-0.01f);
+            Log($"[drop] bardak kasenin ortasına bırakıldı: bardak {cup.transform.position.ToString("F2")}, kase {bowl.transform.position.ToString("F2")}, " +
+                $"elde {(counter.Held != null ? counter.Held.name : "yok")}");
+            Check(counter.Held == null, "bardak kasenin yanına bırakılamadı");
+            Check(!cupBox.Intersects(bowlBox), "bardak kasenin içine girdi");
+            yield return Look("island_cup_by_bowl", new Vector3(-0.5f, 2.1f, -1.0f), counter.transform.position + Vector3.up * 0.9f);
+        }
+
+        static bool OnIsland(KitchenCounter counter, Vector3 position)
+        {
+            Vector3 local = counter.transform.InverseTransformPoint(position);
+            return Mathf.Abs(local.x) <= counter.topSize.x / 2f && Mathf.Abs(local.z) <= counter.topSize.y / 2f
+                && local.y >= counter.topHeight - 0.05f && local.y <= counter.topHeight + 0.4f;
+        }
+
+        /// <summary>
+        /// Bir yöne koşarken üst üste zıplıyor (oyuncunun zıplaması, 1 m); kasaların üstüne çıkamamalı. Oyuncunun kendi
+        /// hareketi bu sırada kapalı (kapsülü test sürüyor).
+        /// </summary>
+        IEnumerator TryClimb(DishasterPlayer player, Vector3 start, Vector3 direction, string label)
+        {
+            CharacterController controller = player.GetComponent<CharacterController>();
+            player.enabled = false;
+            controller.enabled = false;
+            player.transform.position = start;
+            controller.enabled = true;
+
+            float top = start.y;
+            float vertical = 0f;
+            float until = Time.time + 2.4f;
+            while (Time.time < until)
+            {
+                if (controller.isGrounded) vertical = Mathf.Sqrt(2f * player.gravity * player.jumpHeight);
+                vertical -= player.gravity * Time.deltaTime;
+                controller.Move((direction * 4f + Vector3.up * vertical) * Time.deltaTime);
+                top = Mathf.Max(top, player.transform.position.y);
+                yield return null;
+            }
+
+            float settle = Time.time + 1.5f;
+            while (!controller.isGrounded && Time.time < settle)
+            {
+                vertical = Mathf.Min(vertical, 0f) - player.gravity * Time.deltaTime;
+                controller.Move(Vector3.up * vertical * Time.deltaTime);
+                yield return null;
+            }
+
+            Vector3 end = player.transform.position;
+            player.enabled = true;
+            Log($"[climb] {label}: son {end.ToString("F2")}, en yüksek {top:0.00}");
+            Check(end.y < start.y + 0.15f, "kasaların üstüne çıkılabildi (" + label + ")");
+        }
+
+        /// <summary>Verilen yerden bir noktaya bakan geçici kamera (sahneyi görenin gözüyle).</summary>
+        IEnumerator Look(string name, Vector3 from, Vector3 at)
+        {
+            if (_shots == null) yield break;
+
+            var cameraObject = new GameObject("LookCamera");
+            var view = cameraObject.AddComponent<Camera>();
+            view.enabled = false;
+            view.fieldOfView = 55f;
+            view.nearClipPlane = 0.03f;
+            cameraObject.transform.position = from;
+            cameraObject.transform.LookAt(at);
+
+            yield return null;
+            yield return Capture(view, name);
+            yield return null;
+            Destroy(cameraObject);
+        }
+
+        /// <summary>
+        /// Tutuşu göster: doğduğu yerde düz bakarken (bir yere değmeden, eşya göğüs önünde) önden, yandan ve ele
+        /// yakından iki yandan.
+        /// </summary>
+        IEnumerator ShowGrip(string label, DishasterPlayer player)
+        {
+            if (_shots == null) yield break;
+
+            CharacterController controller = player.GetComponent<CharacterController>();
+            controller.enabled = false;
+            player.transform.SetPositionAndRotation(_spawnPosition, _spawnRotation);
+            controller.enabled = true;
+            player.FaceTowards(player.headPivot.position + _spawnRotation * Vector3.forward * 3f);
+            yield return new WaitForSeconds(0.7f);
+
+            Log($"[grip] {label}: {player.GetComponentInChildren<CharacterBody>().Describe()}");
+            yield return Shot($"blind_fp_{label}");
+            yield return Third($"blind_3p_{label}", player, false);
+            yield return Third($"blind_3p_{label}_side", player, true);
+            yield return Near($"blind_near_{label}", player, LowVisionRole.Hand.position, 0.6f);
+            yield return Near($"blind_near_{label}_left", player, LowVisionRole.Hand.position, -0.6f);
         }
 
         /// <summary>Oyuncuya önden (ya da yandan) bakan geçici kamera: kendi karakterini başkalarının gördüğü gibi.</summary>
@@ -723,7 +1406,7 @@ namespace Dishaster
 
             var cameraObject = new GameObject("AutoTestCamera");
             var view = cameraObject.AddComponent<Camera>();
-            view.depth = 100f;
+            view.enabled = false;
             view.fieldOfView = 50f;
             view.nearClipPlane = 0.05f;
             Transform root = player.transform;
@@ -732,8 +1415,7 @@ namespace Dishaster
             cameraObject.transform.LookAt(root.position + Vector3.up * 0.25f);
 
             yield return null;
-            yield return new WaitForEndOfFrame();
-            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(_shots, name + ".png"));
+            yield return Capture(view, name);
             yield return null;
             yield return null;
 
@@ -760,7 +1442,7 @@ namespace Dishaster
 
             var cameraObject = new GameObject("NearCamera");
             var view = cameraObject.AddComponent<Camera>();
-            view.depth = 100f;
+            view.enabled = false;
             view.fieldOfView = 50f;
             view.nearClipPlane = 0.03f;
             Transform root = player.transform;
@@ -768,8 +1450,7 @@ namespace Dishaster
             cameraObject.transform.LookAt(focus);
 
             yield return null;
-            yield return new WaitForEndOfFrame();
-            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(_shots, name + ".png"));
+            yield return Capture(view, name);
             yield return null;
             yield return null;
 
@@ -789,7 +1470,7 @@ namespace Dishaster
 
             var cameraObject = new GameObject("CloseUpCamera");
             var view = cameraObject.AddComponent<Camera>();
-            view.depth = 100f;
+            view.enabled = false;
             view.fieldOfView = 45f;
             view.nearClipPlane = 0.05f;
             Transform root = other.transform;
@@ -798,8 +1479,7 @@ namespace Dishaster
             cameraObject.transform.LookAt(target + root.right * 0.12f);
 
             yield return null;
-            yield return new WaitForEndOfFrame();
-            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(_shots, name + ".png"));
+            yield return Capture(view, name);
             yield return null;
             Destroy(cameraObject);
         }
@@ -846,8 +1526,15 @@ namespace Dishaster
                     Vector3 position = new Vector3(point.x, 1.05f, point.z) + Quaternion.Euler(0f, 45f * turn, 0f) * first * distance;
                     controller.enabled = false;
                     bool blocked = Physics.CheckCapsule(position + Vector3.down * 0.6f, position + Vector3.up * 0.7f, controller.radius * 0.9f,
-                        Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+                        Physics.AllLayers, QueryTriggerInteraction.Ignore);
                     if (blocked)
+                    {
+                        controller.enabled = true;
+                        continue;
+                    }
+
+                    // Altında zemin olmalı (kasaların arkası gibi odanın dışındaki boşluk değil).
+                    if (!Physics.Raycast(position, Vector3.down, 1.4f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
                     {
                         controller.enabled = true;
                         continue;
@@ -857,8 +1544,11 @@ namespace Dishaster
                     yield return StandAndAim(controller, position, point);
 
                     Transform view = _player.playerCamera.transform;
-                    if (!Physics.Raycast(view.position, view.forward, out RaycastHit hit, 1.45f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide)) continue;
-                    bool sees = item != null ? hit.collider.GetComponentInParent<KitchenItem>() == item : Vector3.Distance(hit.point, point) < 0.08f;
+                    if (!Physics.Raycast(view.position, view.forward, out RaycastHit hit, LowVisionRole.ReachAlong(view.forward), Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide)) continue;
+                    KitchenItem seen = hit.collider.GetComponentInParent<KitchenItem>();
+                    // Tabaktaki dilim tabağın kutusunun içinde: ışın tabağa değiyor, tıklama dilimi alıyor.
+                    bool sees = item != null ? seen == item || (seen != null && seen.Plate != null && seen.Plate.Holds(item) && Vector3.Distance(hit.point, item.Center) < 0.06f)
+                        : Vector3.Distance(hit.point, point) < 0.08f;
                     if (sees) yield break;
                 }
             }
@@ -873,11 +1563,11 @@ namespace Dishaster
             _player.transform.position = position;
             controller.enabled = true;
 
-            float until = Time.time + 0.35f;
+            // Kafa pivotundan: kamera eğilip uzanınca sadece bakış yönünde kayıyor, ışın aynı doğruda kalıyor.
+            float until = Time.time + 0.5f;
             while (Time.time < until)
             {
-                Transform aim = _player.playerCamera.transform;
-                _player.FaceTowards(_player.headPivot.position + (point - aim.position));
+                _player.FaceTowards(point);
                 yield return null;
             }
         }
@@ -899,13 +1589,22 @@ namespace Dishaster
             }
         }
 
+        /// <summary>Dünyadaki bir noktaya bakıp bırak (adanın dışı: raf, tezgah, kasa).</summary>
+        IEnumerator DropAt(KitchenCounter counter, Vector3 point)
+        {
+            yield return Approach(point);
+            counter.RequestGrabOrDrop(LowVisionRole.Touching ? LowVisionRole.AimPoint : point);
+            yield return Wait();
+            Check(counter.Held == null, $"bırakılamadı: {point.ToString("F2")} ({counter.LastRefusal})");
+        }
+
         IEnumerator Drop(KitchenCounter counter, Vector3 local)
         {
             Vector3 aim = counter.transform.TransformPoint(new Vector3(local.x, counter.topHeight + 0.02f, local.z));
             yield return Approach(aim);
             counter.RequestGrabOrDrop(aim);
             yield return Wait();
-            Check(counter.Held == null, "bırakılamadı");
+            Check(counter.Held == null, "bırakılamadı: " + counter.LastRefusal);
         }
 
         IEnumerator Pour(KitchenCounter counter, KitchenContainer into, System.Func<bool> done)

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 
@@ -7,6 +8,7 @@ namespace Dishaster
     {
         StrawberryMilk,
         StrawberryCake,
+        TomatoPlate,
     }
 
     /// <summary>Tarif kartındaki bir adımın durumu: yapılınca yeşil tik, fazlaysa kırmızı.</summary>
@@ -18,20 +20,34 @@ namespace Dishaster
     }
 
     /// <summary>
-    /// Oynanan tarif. Miktarları sunucu seçiyor, herkese gidiyor (bkz. KitchenCounter). Kaseye konan her malzeme
-    /// herkeste aynı olaylarla geldiği için kontrol her makinede ayrı yapılıyor, sonuç aynı çıkıyor.
-    /// Bir malzeme hedefin %20'sinden fazla konursa (tarifte olmayan bir şey konursa da) tarif bozuluyor.
+    /// Oynanan tarif. Miktarları sunucu seçiyor, herkese gidiyor (bkz. KitchenCounter). Mutfak olayları herkeste
+    /// aynı geldiği için kontrol her makinede ayrı yapılıyor, sonuç aynı çıkıyor.
+    /// İlk tarif domatesli tabak: domates tahtada doğranıyor, bir tabak adaya konuyor, üstüne tam 3 dilim domates.
+    /// Fazlası ya da başka bir şey tabakta kırmızı görünüyor, elle geri alınabiliyor (tarif bozulmuyor).
+    /// Çilekli sütte bir malzeme hedefin %20'sinden fazla kaseye konursa (tarifte olmayan bir şey konursa da) tarif bozuluyor.
     /// </summary>
     public class Recipe
     {
         public const float Tolerance = 0.2f;
 
-        /// <summary>Şimdilik oynanan tarif. Çilekli kekin karıştırma/kalıp/fırın/servis adımları henüz yok.</summary>
-        public const RecipeKind Current = RecipeKind.StrawberryMilk;
+        /// <summary>Oynanan tarif: ilk tarif domatesli tabak. Çilekli kekin karıştırma/kalıp/fırın/servis adımları henüz yok.</summary>
+        public const RecipeKind Current = RecipeKind.TomatoPlate;
+
+        const int TomatoSlices = 3;
 
         readonly int[] _targets = new int[Ingredients.Count];
         readonly int[] _slicesCut = new int[Ingredients.Count];
         readonly RecipeStepState[] _steps = new RecipeStepState[4];
+
+        /// <summary>Bu tarif hangisi (oyunda Current; testler başkasını da kurabiliyor).</summary>
+        public RecipeKind Kind { get; }
+
+        public Recipe() : this(Current) { }
+
+        public Recipe(RecipeKind kind)
+        {
+            Kind = kind;
+        }
 
         public bool HasTargets { get; private set; }
         public bool Failed { get; private set; }
@@ -51,6 +67,10 @@ namespace Dishaster
             var targets = new int[Ingredients.Count];
             switch (Current)
             {
+                case RecipeKind.TomatoPlate:
+                    targets[(int)Ingredient.Tomato] = TomatoSlices;
+                    break;
+
                 case RecipeKind.StrawberryMilk:
                     targets[(int)Ingredient.Milk] = Random.Range(2, 6) * 100;
                     // Bir çilek 4 dilim çıkarıyor.
@@ -88,13 +108,16 @@ namespace Dishaster
             Version++;
         }
 
+        /// <summary>Tarif kaseyle mi yapılıyor (dökülen ve kaseye atılan miktarlar sayılıyor).</summary>
+        bool UsesBowl => Kind == RecipeKind.StrawberryMilk || Kind == RecipeKind.StrawberryCake;
+
         /// <summary>Kaseye bir kaptan döküldüğünde, eklenenler kaseye girmeden önce.</summary>
         public void CheckPour(KitchenContainer source, float[] poured)
         {
-            if (Failed || Completed || !HasTargets) return;
+            if (Failed || Completed || !HasTargets || !UsesBowl) return;
 
             // Süt ölçülmeden kaseye gitmesin: önce ölçü bardağına (hem alan hem döken kap).
-            if (Current == RecipeKind.StrawberryMilk && !source.canReceive && poured[(int)Ingredient.Milk] > 0.5f)
+            if (Kind == RecipeKind.StrawberryMilk && !source.canReceive && poured[(int)Ingredient.Milk] > 0.5f)
                 Fail("Süt doğrudan kaseye döküldü: önce ölçü bardağına dökülmeli");
         }
 
@@ -106,13 +129,78 @@ namespace Dishaster
 
         public RecipeStepState StepState(int index) => _steps[index];
 
-        /// <summary>
-        /// Her mutfak olayından sonra: adımların o anki durumu (herkeste aynı olaylarla aynı çıkıyor).
-        /// Ölçü bardağı adımı süt kaseye geçince de tamam sayılıyor.
-        /// </summary>
+        /// <summary>Her mutfak olayından sonra: adımların o anki durumu (herkeste aynı olaylarla aynı çıkıyor).</summary>
+        public void UpdateSteps(KitchenCounter counter)
+        {
+            if (!HasTargets || counter == null) return;
+
+            if (Kind == RecipeKind.TomatoPlate)
+            {
+                if (UpdatePlateSteps(counter)) Version++;
+                return;
+            }
+
+            UpdateSteps(counter.Cup, counter.Bowl);
+        }
+
+        /// <summary>Kaseyle yapılan tariflerde: bardak ve kase (testler doğrudan çağırıyor).</summary>
         public void UpdateSteps(KitchenContainer cup, KitchenContainer bowl)
         {
-            if (!HasTargets || Current != RecipeKind.StrawberryMilk || bowl == null) return;
+            if (!HasTargets || Kind != RecipeKind.StrawberryMilk) return;
+            if (UpdateMilkSteps(cup, bowl)) Version++;
+        }
+
+        /// <summary>
+        /// Domatesli tabak: doğrandı mı, adada tabak var mı, adadaki tabakta tam 3 dilim domates (başka bir şey yok)
+        /// mu. Tamamlanınca öyle kalıyor.
+        /// </summary>
+        bool UpdatePlateSteps(KitchenCounter counter)
+        {
+            int slices = TargetOf(Ingredient.Tomato);
+            KitchenPlate plate = ServedPlate(counter, out bool onIsland);
+            int tomatoes = plate != null ? plate.CountOf(Ingredient.Tomato) : 0;
+            int others = plate != null ? plate.Pieces.Count - tomatoes : 0;
+
+            bool changed = false;
+            changed |= SetStep(0, _slicesCut[(int)Ingredient.Tomato] >= slices ? RecipeStepState.Done : RecipeStepState.Pending);
+            changed |= SetStep(1, onIsland ? RecipeStepState.Done : RecipeStepState.Pending);
+            changed |= SetStep(2, tomatoes > slices || others > 0 ? RecipeStepState.Over : tomatoes == slices ? RecipeStepState.Done : RecipeStepState.Pending);
+
+            if (!Completed && !Failed && onIsland && tomatoes == slices && others == 0)
+            {
+                Completed = true;
+                changed = true;
+            }
+
+            return changed;
+        }
+
+        /// <summary>Sayılan tabak: adada (elde olmayan) üstünde en çok şey olan; adada yoksa üstünde en çok şey olan.</summary>
+        static KitchenPlate ServedPlate(KitchenCounter counter, out bool onIsland)
+        {
+            KitchenPlate best = null;
+            onIsland = false;
+            foreach (KitchenPlate plate in counter.Plates)
+            {
+                if (plate == null || !plate.gameObject.activeInHierarchy || plate.Item == counter.Held) continue;
+
+                bool island = counter.IsOnIsland(plate.transform.position);
+                bool better = best == null
+                    || (island && !onIsland)
+                    || (island == onIsland && plate.Pieces.Count > best.Pieces.Count);
+                if (!better) continue;
+
+                best = plate;
+                onIsland = island;
+            }
+
+            return best;
+        }
+
+        /// <summary>Çilekli süt. Ölçü bardağı adımı süt kaseye geçince de tamam sayılıyor.</summary>
+        bool UpdateMilkSteps(KitchenContainer cup, KitchenContainer bowl)
+        {
+            if (bowl == null) return false;
 
             int slices = TargetOf(Ingredient.Strawberry);
             float bowlMilk = bowl.AmountOf(Ingredient.Milk);
@@ -127,8 +215,7 @@ namespace Dishaster
             changed |= SetStep(1, measure);
             changed |= SetStep(2, pourBowl);
             changed |= SetStep(3, bowlSlices == slices ? RecipeStepState.Done : bowlSlices > slices ? RecipeStepState.Over : RecipeStepState.Pending);
-
-            if (changed) Version++;
+            return changed;
         }
 
         bool SetStep(int index, RecipeStepState state)
@@ -146,10 +233,10 @@ namespace Dishaster
             return amount >= target * (1f - Tolerance) - 0.001f ? RecipeStepState.Done : RecipeStepState.Pending;
         }
 
-        /// <summary>Kaseye bir şey girdikçe çağrılıyor.</summary>
+        /// <summary>Kaseye bir şey girdikçe çağrılıyor (kaseyle yapılan tariflerde).</summary>
         public void Check(KitchenContainer bowl)
         {
-            if (Failed || Completed || !HasTargets) return;
+            if (Failed || Completed || !HasTargets || !UsesBowl) return;
 
             for (int i = 0; i < _targets.Length; i++)
             {
@@ -163,7 +250,7 @@ namespace Dishaster
                 return;
             }
 
-            if (Current == RecipeKind.StrawberryMilk && IsEnough(bowl, Ingredient.Milk) && IsEnough(bowl, Ingredient.Strawberry))
+            if (Kind == RecipeKind.StrawberryMilk && IsEnough(bowl, Ingredient.Milk) && IsEnough(bowl, Ingredient.Strawberry))
             {
                 Completed = true;
                 Version++;
@@ -181,54 +268,80 @@ namespace Dishaster
             return $"{Mathf.RoundToInt(amount)} {Ingredients.UnitOf(ingredient)}";
         }
 
-        // Yazı tipinde ✓ yok; √ tik olarak kullanılıyor.
-        void AppendStep(StringBuilder text, int index, string line)
+        // ── KART ────────────────────────────────────────────────────────────
+
+        /// <summary>Kartın başlığı.</summary>
+        public string Title
         {
-            switch (_steps[index])
+            get
             {
-                case RecipeStepState.Done:
-                    text.AppendLine($"<color=#6FD86F><b>√</b>  {index + 1}. {line}</color>");
-                    break;
-                case RecipeStepState.Over:
-                    text.AppendLine($"<color=#FF7060><b>!</b>  {index + 1}. {line}  (fazla)</color>");
-                    break;
-                default:
-                    text.AppendLine($"<color=#9A968E>○</color>  {index + 1}. {line}");
-                    break;
+                switch (Kind)
+                {
+                    case RecipeKind.TomatoPlate: return "DOMATESLİ TABAK";
+                    case RecipeKind.StrawberryMilk: return "ÇİLEKLİ SÜT";
+                    default: return "ÇİLEKLİ KEK";
+                }
             }
         }
 
-        /// <summary>Bilmiyorum'un gördüğü tarif kartı.</summary>
-        public string Describe()
+        /// <summary>Başlığın altındaki kısa not.</summary>
+        public string Subtitle
         {
-            var text = new StringBuilder();
-
-            switch (Current)
+            get
             {
+                switch (Kind)
+                {
+                    case RecipeKind.TomatoPlate: return "1. tarif · Sunum adada";
+                    default: return "Ölçü bardağı 1 L · Hata payı %20";
+                }
+            }
+        }
+
+        /// <summary>Adımlar, sırayla: metin ve durum.</summary>
+        public List<(string text, RecipeStepState state)> Steps()
+        {
+            var steps = new List<(string, RecipeStepState)>();
+            switch (Kind)
+            {
+                case RecipeKind.TomatoPlate:
+                    int slices = TargetOf(Ingredient.Tomato);
+                    steps.Add(($"Domatesi doğra: {slices} dilim", _steps[0]));
+                    steps.Add(("Bir tabağı adaya koy", _steps[1]));
+                    steps.Add(($"{slices} dilim domatesi tabağa koy", _steps[2]));
+                    break;
+
                 case RecipeKind.StrawberryMilk:
-                    text.AppendLine("<b>ÇİLEKLİ SÜT</b>");
-                    text.AppendLine("<size=80%>Ölçü bardağı 1 L. Hata payı %20.</size>");
-                    text.AppendLine();
-                    AppendStep(text, 0, $"Çileği doğra: {Format(Ingredient.Strawberry, TargetOf(Ingredient.Strawberry))}");
-                    AppendStep(text, 1, $"Sütü ölçü bardağına dök: {Format(Ingredient.Milk, TargetOf(Ingredient.Milk))}");
-                    AppendStep(text, 2, "Ölçü bardağındaki sütü kaseye dök");
-                    AppendStep(text, 3, "Çilek dilimlerini kaseye ekle");
+                    steps.Add(($"Çileği doğra: {Format(Ingredient.Strawberry, TargetOf(Ingredient.Strawberry))}", _steps[0]));
+                    steps.Add(($"Sütü ölçü bardağına dök: {Format(Ingredient.Milk, TargetOf(Ingredient.Milk))}", _steps[1]));
+                    steps.Add(("Ölçü bardağındaki sütü kaseye dök", _steps[2]));
+                    steps.Add(("Çilek dilimlerini kaseye ekle", _steps[3]));
                     break;
 
                 case RecipeKind.StrawberryCake:
-                    text.AppendLine("<b>ÇİLEKLİ KEK</b>");
-                    text.AppendLine("<size=80%>Ölçü bardağı 1 L. Hata payı %20.</size>");
-                    text.AppendLine();
-                    text.AppendLine($"1. Çilekleri doğra: {Format(Ingredient.Strawberry, TargetOf(Ingredient.Strawberry))}");
-                    text.AppendLine("2. Kaseye koy:");
+                    steps.Add(($"Çilekleri doğra: {Format(Ingredient.Strawberry, TargetOf(Ingredient.Strawberry))}", RecipeStepState.Pending));
+                    var bowl = new StringBuilder("Kaseye koy:");
                     foreach (Ingredient ingredient in new[] { Ingredient.Flour, Ingredient.Milk, Ingredient.Sugar, Ingredient.BakingPowder, Ingredient.Egg })
-                        text.AppendLine($"    {Ingredients.NameOf(ingredient)}: {Format(ingredient, TargetOf(ingredient))}");
-                    text.AppendLine("<color=#888>3. Karıştır</color>");
-                    text.AppendLine("<color=#888>4. Çilekleri ekle, kalıba dök</color>");
-                    text.AppendLine("<color=#888>5. Fırında pişir</color>");
-                    text.Append("<color=#888>6. Servis et</color>");
+                        bowl.Append($"\n{Ingredients.NameOf(ingredient)}: {Format(ingredient, TargetOf(ingredient))}");
+                    steps.Add((bowl.ToString(), RecipeStepState.Pending));
+                    steps.Add(("Karıştır", RecipeStepState.Pending));
+                    steps.Add(("Çilekleri ekle, kalıba dök", RecipeStepState.Pending));
+                    steps.Add(("Fırında pişir", RecipeStepState.Pending));
+                    steps.Add(("Servis et", RecipeStepState.Pending));
                     break;
             }
+
+            return steps;
+        }
+
+        /// <summary>Kartın tamamı tek metin (test ipucu ve kayıt için).</summary>
+        public string Describe()
+        {
+            var text = new StringBuilder();
+            text.AppendLine(Title);
+            text.AppendLine(Subtitle);
+            List<(string text, RecipeStepState state)> steps = Steps();
+            for (int i = 0; i < steps.Count; i++)
+                text.AppendLine($"{i + 1}. {steps[i].text} [{steps[i].state}]");
 
             return text.ToString();
         }

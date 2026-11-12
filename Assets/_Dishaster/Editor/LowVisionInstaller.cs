@@ -12,7 +12,7 @@ namespace Dishaster.EditorTools
     [InitializeOnLoad]
     public static class LowVisionInstaller
     {
-        const string Version = "6";
+        const string Version = "7";
         const string VersionFile = "ProjectSettings/DishasterLowVision.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/LowVisionRole.prefab";
         const string ShaderPath = "Assets/_Dishaster/Shaders/LowVision.shader";

@@ -120,7 +120,7 @@ namespace Dishaster.EditorTools
             return true;
         }
 
-        // Raflar alttan üste: alt rafta çilekler, ortada süt kutuları, üstte peynir. Yükseklik rafın üst yüzü.
+        // Raflar alttan üste: alt rafta çilekler, ortada süt kutuları, üstte peynir ve ekmek. Yükseklik rafın üst yüzü.
         static void FillShelves(Transform root, GameObject body)
         {
             var shelves = new List<Bounds>();
@@ -149,17 +149,16 @@ namespace Dishaster.EditorTools
                     KitchenCounterInstaller.PlaceItem(root, milk, OnShelf(middle, -0.2f + 0.4f * i, 0f), 0f);
             }
 
-            // Çilek: altta altı tane, iki sıra.
-            GameObject strawberry = FoodShowcaseInstaller.FoodItem("PF_Strawberry_01");
-            if (strawberry != null)
-            {
-                for (int i = 0; i < 6; i++)
-                    KitchenCounterInstaller.PlaceItem(root, strawberry, OnShelf(bottom, -0.3f + 0.3f * (i % 3), i < 3 ? -0.2f : 0.15f), 35f * i);
-            }
+            // Çilek buzdolabında değil, kilerde bir kasada (KitchenSetupInstaller); alt raf boş kalıyor.
+
+            if (top.max.y <= middle.max.y + 0.05f) return;
 
             GameObject cheese = FoodShowcaseInstaller.FoodItem("PF_Cheese_Block_01");
-            if (cheese != null && top.max.y > middle.max.y + 0.05f)
-                KitchenCounterInstaller.PlaceItem(root, cheese, OnShelf(top, 0f, 0f), 10f);
+            if (cheese != null) KitchenCounterInstaller.PlaceItem(root, cheese, OnShelf(top, -0.22f, 0f), 10f);
+
+            // Ekmek: kısa kenarı rafın genişliği boyunca.
+            GameObject bread = FoodShowcaseInstaller.FoodItem("PF_Bread_Loaf_01");
+            if (bread != null) KitchenCounterInstaller.PlaceItem(root, bread, OnShelf(top, 0.22f, 0f), 0f);
         }
 
         // Rafın üstünde bir nokta: x ve z rafın yarı genişliği/derinliği oranında (-0.5..0.5).

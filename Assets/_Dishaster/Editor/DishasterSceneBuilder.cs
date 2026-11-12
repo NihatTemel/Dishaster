@@ -443,6 +443,7 @@ namespace Dishaster.EditorTools
             hud.resumeButton = AddButton(card.transform, "ResumeButton", "RESUME", UiStyle.Kind.Primary, new Vector2(0f, 10f), new Vector2(420f, 80f));
             hud.leaveButton = AddButton(card.transform, "LeaveButton", "LEAVE", UiStyle.Kind.Quiet, new Vector2(0f, -100f), new Vector2(420f, 72f));
             hud.pausePanel = pause.gameObject;
+            GameUiInstaller.StylePause(hud);
             pause.gameObject.SetActive(false);
 
             AddEventSystem();

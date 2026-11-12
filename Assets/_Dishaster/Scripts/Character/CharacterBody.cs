@@ -12,6 +12,9 @@ namespace Dishaster
     /// Kendi ekranında kamera gözlerde; eğilince sadece bakış yönünde öne kayıyor (nişangah aynı yeri gösteriyor).
     /// LateUpdate'te göz kırpma ve sesle ağız (KARAKTERLER.md: kapalı ağız MBP=100, MBP+OO+EE en çok 100;
     /// Çizer'in ağzı bantlı, hep kapalı).
+    /// Çömelme animasyonun üstüne: kalça iniyor, bacaklar (iki kemik IK) ayakları animasyonun koyduğu yerde ve
+    /// yönde tutuyor, dizler öne bükülüyor (yürürken de: çömelerek yürüme). Ctrl ile (DishasterPlayer, kamera da
+    /// iniyor) ya da el alçaktaki bir yere (yerdeki kasa) eğilmekle yetişmiyorsa kendiliğinden.
     /// </summary>
     [RequireComponent(typeof(Animator))]
     // Mutfak (bıçak inişi, kap eğimi) ve defter yerleştikten sonra: hedefler oradan okunuyor.
@@ -37,6 +40,15 @@ namespace Dishaster
         const float HeadKeep = 0.6f;
         // El ön kolun devamından en çok bu kadar bükülüyor (derece): fazlası kırık bilek gibi görünüyordu.
         const float MaxWristBend = 35f;
+        // Çömelme: kalça en çok bacak boyunun bu kadarı iner (diz ~125°); Ctrl ile bunun bu kadarı.
+        const float MaxSquatFraction = 0.55f;
+        const float CrouchSquatFraction = 0.9f;
+        // Çömelmek de yetmezse (yerdeki kasa) belden bu kadara kadar öne kapanıyor, uzanan omzu da öne alıyor.
+        const float DeepLean = 80f;
+        const float ReachTwist = 40f;
+        // Bunlar sadece omurganın dibinden bu kadar aşağıdaki ve yatayda bu kadar yakındaki hedefe.
+        const float LowTarget = 0.15f;
+        const float NearTarget = 1.1f;
 
         static readonly int SpeedParameter = Animator.StringToHash("Speed");
         static readonly string[] SpineBones = { "Spine", "Spine1", "Spine2" };
@@ -105,8 +117,23 @@ namespace Dishaster
         float _speed;
         float _lean;
         float _twist;
+        float _reachSquat;
+        float _squat;
+        float _maxSquat;
         Arm _leftArm;
         Arm _rightArm;
+        Leg _leftLeg;
+        Leg _rightLeg;
+        Transform _hips;
+
+        /// <summary>Bir bacak: kalça-diz-ayak bileği.</summary>
+        class Leg
+        {
+            public Transform upper;
+            public Transform knee;
+            public Transform foot;
+            public bool Valid => upper != null && knee != null && foot != null;
+        }
 
         // Uzaktakilerde eşya avuca oturtuluyor; bir sonraki karenin başında geri alınıyor ki hedef hep eşyanın
         // asıl yerinden okunsun (yoksa el ile eşya birbirini kovalıyor, kol dönüp duruyordu).
@@ -122,6 +149,15 @@ namespace Dishaster
         /// <summary>Belden eğilme (derece).</summary>
         public float Lean => _lean;
 
+        /// <summary>Çömelme: kalçanın indiği yükseklik (metre).</summary>
+        public float Squat => _squat;
+
+        /// <summary>Test için: sağ el işteyken avucun hedefe uzaklığı (metre); yetişiyorsa birkaç cm.</summary>
+        public float ReachGap { get; private set; }
+
+        /// <summary>Test için: sağ elin hedefi eğilip çömelerek yetişilebilecek yerde mi (değilse kol en yakına uzanıyor).</summary>
+        public bool RightReachable { get; private set; }
+
         /// <summary>Test için: elin ön koldan bükülmesi (derece), kol işteyken.</summary>
         public float WristBend(bool left) => left ? _leftArm?.bend ?? 0f : _rightArm?.bend ?? 0f;
 
@@ -130,7 +166,7 @@ namespace Dishaster
         {
             if (_leftArm == null) return "";
             string Arm(Arm arm) => $"w {arm.weight:0.00} kol {arm.length:0.00} omuz {(arm.Valid ? ToBody(arm.upper.position) : Vector3.zero).ToString("F2")} hedef {ToBody(arm.Work.palm).ToString("F2")} avuç {ToBody(Palm(arm)).ToString("F2")} bilek {arm.bend:0}°";
-            return $"eğilme {_lean:0}° dönme {_twist:0}° | sol {Arm(_leftArm)} | sağ {Arm(_rightArm)}";
+            return $"eğilme {_lean:0}° dönme {_twist:0}° çömelme {_squat * 100f:0} cm | sol {Arm(_leftArm)} | sağ {Arm(_rightArm)}";
         }
 
         public void Setup(DishasterPlayer player, RuntimeAnimatorController controller, float lidAngle, bool mouthTied, GameObject hands, AnimationClip handPoses)
@@ -148,6 +184,17 @@ namespace Dishaster
             _footL = FindBone(transform, "LeftFoot");
             _footR = FindBone(transform, "RightFoot");
             if (_footL != null && _footR != null) _footHeight = Mathf.Min(FootY(_footL), FootY(_footR));
+
+            // Çömelme: bacak boyundan; Ctrl'deki iniş kameraya da (oyuncunun kafa pivotu o kadar iniyor).
+            _hips = hips;
+            _leftLeg = new Leg { upper = FindBone(transform, "LeftUpLeg"), knee = FindBone(transform, "LeftLeg"), foot = _footL };
+            _rightLeg = new Leg { upper = FindBone(transform, "RightUpLeg"), knee = FindBone(transform, "RightLeg"), foot = _footR };
+            if (_leftLeg.Valid)
+            {
+                float legLength = Vector3.Distance(_leftLeg.upper.position, _leftLeg.knee.position) + Vector3.Distance(_leftLeg.knee.position, _leftLeg.foot.position);
+                _maxSquat = legLength * MaxSquatFraction;
+                player.CrouchDrop = _maxSquat * CrouchSquatFraction;
+            }
 
             // Belden eğilme: omurga kemikleri (eğilme aralarında paylaşılıyor), dönme noktası en alttaki.
             var spine = new List<Transform>();
@@ -359,32 +406,85 @@ namespace Dishaster
         }
 
         /// <summary>
-        /// Bu kolun hedefine yetişmek için gereken en az eğilme; hiç yetişmiyorsa en yakına getiren (en çok MaxLean).
+        /// Bu kolun hedefine yetişmek için gereken en az eğilme ve çömelme, sırayla: önce biraz eğilme (en çok
+        /// MaxLean; tezgaha uzanmak böyle), yetmezse çömelme, o da yetmezse belden derin eğilme (yerdeki kasa: kollar
+        /// ve gövde kısa, çömelip öne kapanarak yetişiyor). Hiç yetişmiyorsa en yakına getiren. Ctrl'le çömelmişse omuz
+        /// zaten o kadar aşağıda (crouchDrop).
         /// </summary>
-        void ReachFor(Arm arm, Vector3 target, out float lean, out float twist)
+        bool ReachFor(Arm arm, Vector3 target, float crouchDrop, out float lean, out float twist, out float squat)
         {
             float reach = arm.length * ReachFraction;
             float maxLean = _player.isLocalPlayer ? LocalMaxLean : MaxLean;
+            float deepest = Mathf.Max(crouchDrop, _maxSquat);
+            float baseTwist = TwistFor(target);
+            twist = baseTwist;
             lean = 0f;
-            twist = TwistFor(target);
+            squat = crouchDrop;
+
+            // Çömelip öne kapanmak sadece yakındaki alçak hedefe (yerdeki kasa, alt raf): göğüs hizasında ya da uzakta
+            // bir yere dokunurken gövde eğilmekle kalıyor (yetişmese de çömelip kıvrılmıyor).
+            Vector3 fromSpine = target - _spinePivotLocal;
+            bool lowAndNear = fromSpine.y < -LowTarget && new Vector2(fromSpine.x, fromSpine.z).magnitude < NearTarget;
+            int phases = lowAndNear ? 3 : 1;
 
             float bestDistance = float.MaxValue;
-            for (int l = 0; l <= 20; l++)
+            const int Steps = 20;
+            for (int phase = 0; phase < phases; phase++)
             {
-                float trialLean = maxLean * l / 20f;
-                float distance = Vector3.Distance(Shoulder(arm, trialLean, twist), target);
-                if (distance <= reach)
+                for (int i = 0; i <= Steps; i++)
                 {
-                    lean = trialLean;
-                    return;
-                }
+                    float t = (float)i / Steps;
+                    float trialLean = phase == 0 ? maxLean * t : phase == 1 ? maxLean : Mathf.Lerp(maxLean, DeepLean, t);
+                    float trialSquat = phase == 0 ? crouchDrop : phase == 1 ? Mathf.Lerp(crouchDrop, deepest, t) : deepest;
+                    // Derin uzanırken uzanan kolun omzu öne: gövde o yana dönüyor.
+                    float trialTwist = phase == 2 ? baseTwist + (arm.left ? 1f : -1f) * ReachTwist * t : baseTwist;
 
-                if (distance < bestDistance)
-                {
-                    bestDistance = distance;
-                    lean = trialLean;
+                    // Derin uzanmada omuzun yeri tahmin (omurga eğrilerek bükülüyor): biraz pay bırakılıyor.
+                    float distance = Vector3.Distance(Shoulder(arm, trialLean, trialTwist) + Vector3.down * trialSquat, target);
+                    if (distance <= (phase == 2 ? reach - 0.03f : reach))
+                    {
+                        lean = trialLean;
+                        squat = trialSquat;
+                        twist = trialTwist;
+                        return true;
+                    }
+
+                    if (distance < bestDistance - 0.005f)
+                    {
+                        bestDistance = distance;
+                        lean = trialLean;
+                        squat = trialSquat;
+                        twist = trialTwist;
+                    }
                 }
             }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Kalça iniyor, bacaklar ayakları animasyonun koyduğu yerde ve yönde tutuyor (iki kemik IK, dizler öne ve
+        /// biraz dışa). Ayakların yeri değişmediği için yere oturtma (ayak yüksekliği düzeltmesi) etkilenmiyor.
+        /// </summary>
+        void ApplySquat(float drop)
+        {
+            if (drop < 0.002f || _hips == null || !_leftLeg.Valid || !_rightLeg.Valid) return;
+
+            Vector3 footL = _leftLeg.foot.position;
+            Vector3 footR = _rightLeg.foot.position;
+            Quaternion turnL = _leftLeg.foot.rotation;
+            Quaternion turnR = _rightLeg.foot.rotation;
+
+            _hips.position += -transform.up * drop;
+            SolveLeg(_leftLeg, footL, turnL, -1f);
+            SolveLeg(_rightLeg, footR, turnR, 1f);
+        }
+
+        void SolveLeg(Leg leg, Vector3 foot, Quaternion turn, float side)
+        {
+            Vector3 hint = leg.knee.position + transform.forward * 0.5f + transform.right * (0.12f * side);
+            SolveArm(leg.upper, leg.knee, leg.foot, foot, hint);
+            leg.foot.rotation = turn;
         }
 
         void UpdateArms()
@@ -394,8 +494,12 @@ namespace Dishaster
             // Hedefler karakterin uzayında ölçülüyor (eğilme de buna göre).
             Quaternion inverse = Quaternion.Inverse(transform.rotation);
 
+            // Ctrl'le çömelme: oyuncunun kafa pivotu da bu kadar iniyor (kamera onunla).
+            float crouchDrop = _player.CrouchAmount * _player.CrouchDrop;
+
             float lean = 0f;
             float twist = 0f;
+            float squat = crouchDrop;
             float blend = 1f - Mathf.Exp(-10f * Time.deltaTime);
             foreach (Arm arm in new[] { _leftArm, _rightArm })
             {
@@ -403,18 +507,26 @@ namespace Dishaster
                 arm.weight = Mathf.Lerp(arm.weight, arm.goal.active ? 1f : 0f, blend);
                 if (!arm.goal.active || !arm.Valid) continue;
 
-                ReachFor(arm, inverse * (WristTarget(arm, arm.goal) - transform.position), out float armLean, out float armTwist);
+                bool reachable = ReachFor(arm, inverse * (WristTarget(arm, arm.goal) - transform.position), crouchDrop, out float armLean, out float armTwist, out float armSquat);
+                if (arm == _rightArm) RightReachable = reachable;
                 lean = Mathf.Max(lean, armLean);
+                squat = Mathf.Max(squat, armSquat);
                 if (Mathf.Abs(armTwist) > Mathf.Abs(twist)) twist = armTwist;
             }
 
             float settle = 1f - Mathf.Exp(-9f * Time.deltaTime);
             _lean = Mathf.Lerp(_lean, lean, settle);
             _twist = Mathf.Lerp(_twist, twist, settle);
+            // Uzanırken çömelme yumuşak; Ctrl'deki kısmı kamerayla birebir (o zaten yumuşak iniyor).
+            _reachSquat = Mathf.Lerp(_reachSquat, Mathf.Max(0f, squat - crouchDrop), settle);
+            _squat = crouchDrop + _reachSquat;
 
-            // Gözler eğilmeden önce (animasyon ve bakışla): kendi ekranında kamera eğilme payı kadar kayıyor.
+            // Gözler çömelip eğilmeden önce (animasyon ve bakışla): kendi ekranında kamera eğilme ve uzanırken
+            // çömelme payı kadar kayıyor (Ctrl'le çömelmede kafa pivotu zaten iniyor, o kadarı sayılmıyor).
             bool localEyes = _player.isLocalPlayer && _head != null && _eyeInHead != Vector3.zero;
-            Vector3 restEye = localEyes ? _head.TransformPoint(_eyeInHead) : Vector3.zero;
+            Vector3 restEye = localEyes ? _head.TransformPoint(_eyeInHead) - transform.up * crouchDrop : Vector3.zero;
+
+            ApplySquat(_squat);
 
             // Belden dönme ve eğilme: omurgada paylaşılıyor, kafa bakışı korusun diye biraz geri.
             if ((_lean > 0.05f || Mathf.Abs(_twist) > 0.05f) && _spine.Length > 0)
@@ -460,6 +572,8 @@ namespace Dishaster
                 // sırasında kol burulup avuç dışarı bakıyor, ağırlık sıfırlanınca birden düzeliyordu.)
                 if (partial) BlendWithAnimated(arm, arm.weight);
             }
+
+            ReachGap = _rightArm.Valid && _rightArm.goal.active ? Vector3.Distance(Palm(_rightArm), _rightArm.goal.palm) : 0f;
         }
 
         static void RememberAnimated(Arm arm)

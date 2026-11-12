@@ -28,11 +28,11 @@ namespace Dishaster
         const float PalmAboveSurface = 0.02f;
         const float RestDrop = 0.1f;
 
-        // Bir yere dokunmuyorken el (ve tutulan eşya) göğüs önünde: sağda, aşağıda, öne doğru. Bakışın eğimini
-        // yarı yarıya izliyor: aşağı bakınca elindekini görüyor, düz bakınca ekranın sağ altında; dışarıdan da
-        // eşya göğüs hizasında (yüzünde değil).
-        static readonly Vector3 CarryOffset = new Vector3(0.17f, -0.4f, 0.4f);
-        const float CarryPitchFollow = 0.5f;
+        // Bir yere dokunmuyorken el (ve tutulan eşya) gövdenin önünde, sağda, göğüs altı hizasında: dirsek bükük, kol
+        // boyunca uzanmıyor (eskiden kol omuz hizasında dümdüz öndeydi). Kafaya göre ama sadece dönüşüyle; aşağı
+        // bakınca biraz iniyor ve öne gidiyor (elindekini görüyor, el göbeğe girmiyor).
+        static readonly Vector3 CarryOffset = new Vector3(0.24f, -0.49f, 0.22f);
+        static readonly Vector3 CarryLookDown = new Vector3(0f, -0.06f, 0.08f);
 
         static LowVisionRole s_instance;
 
@@ -45,6 +45,14 @@ namespace Dishaster
         /// <summary>Kendi makinesinde: tıklayınca gönderilen nokta (nişangahın değdiği yer). Test de buradan tıklıyor.</summary>
         public static Vector3 AimPoint => s_instance != null ? s_instance._aimPoint : Vector3.zero;
 
+        /// <summary>Bu yöne bakarken elin yetiştiği uzaklık (gözden): aşağı baktıkça uzuyor.</summary>
+        public static float ReachAlong(Vector3 direction)
+        {
+            float reach = s_instance != null ? s_instance.reach : 1.45f;
+            float down = s_instance != null ? s_instance.downReach : 0.35f;
+            return reach + down * Mathf.Max(0f, -direction.normalized.y);
+        }
+
         /// <summary>Bu makinedeki oyuncu görmeyen mi: kaplardaki miktar ona hiç çizilmiyor.</summary>
         public static bool LocalIsLowVision { get; private set; }
 
@@ -56,8 +64,10 @@ namespace Dishaster
         public Collider boardBarrier;
 
         [Header("El (metre)")]
-        [Tooltip("Gözden (nişangahtan): bu kadar yakındaki yüzeye/eşyaya el değiyor. Buzdolabının alt rafına üst rafın altından bakabilmek için bu kadar.")]
+        [Tooltip("Gözden (nişangahtan): düz bakarken bu kadar yakındaki yüzeye/eşyaya el değiyor. Buzdolabının alt rafına üst rafın altından bakabilmek için bu kadar.")]
         public float reach = 1.45f;
+        [Tooltip("Aşağı baktıkça erişim bu kadar uzuyor (dik aşağıda tamamı): yerdeki kasalara ayakta da yetişsin (karakter eğilip çömelerek uzanıyor).")]
+        public float downReach = 0.35f;
         public float restDistance = 0.55f;
 
         [Header("Dokunma")]
@@ -184,7 +194,7 @@ namespace Dishaster
             KitchenItem held = HeldItem;
 
             // Eşyalar trigger; oyuncunun kendi kapsülünü ışın içinden başladığı için görmüyor.
-            bool touching = Physics.Raycast(origin, direction, out RaycastHit hit, reach, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
+            bool touching = Physics.Raycast(origin, direction, out RaycastHit hit, ReachAlong(direction), Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
             _touching = touching;
             _aimPoint = touching
                 ? hit.point + hit.normal * SurfaceOffset
@@ -197,13 +207,14 @@ namespace Dishaster
             Vector3 target;
             if (touching)
             {
-                target = _aimPoint + Vector3.up * PalmAboveSurface;
+                // Eşya tutuyorsa onun işleyen yeri (bıçakta ağzın ortası) noktanın hemen üstüne geliyor.
+                target = _aimPoint + Vector3.up * (held != null ? held.ReachUp : PalmAboveSurface);
                 if (held != null) target -= rotation * Vector3.forward * held.reachBack;
             }
             else
             {
-                float pitch = Mathf.DeltaAngle(0f, head.eulerAngles.x);
-                target = head.position + Quaternion.Euler(pitch * CarryPitchFollow, yaw, 0f) * CarryOffset;
+                float lookDown = Mathf.Sin(Mathf.DeltaAngle(0f, head.eulerAngles.x) * Mathf.Deg2Rad);
+                target = head.position + rotation * (CarryOffset + CarryLookDown * lookDown);
             }
 
             Transform body = _player.transform;

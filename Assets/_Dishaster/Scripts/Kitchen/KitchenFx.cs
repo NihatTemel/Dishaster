@@ -28,6 +28,9 @@ namespace Dishaster
         AudioClip _tick;
         AudioClip _plop;
         AudioClip _door;
+        AudioClip _knock;
+        AudioClip _place;
+        AudioClip _refuse;
         AudioClip _success;
         AudioClip _fail;
         AudioSource _pourSource;
@@ -44,6 +47,12 @@ namespace Dishaster
             _tick = Make("Tick", 0.05f, (t, n) => Envelope(t, 0.002f, 0.04f) * 0.5f * Mathf.Sin(2f * Mathf.PI * 900f * t));
             _plop = Make("Plop", 0.18f, (t, n) => Envelope(t, 0.004f, 0.16f) * 0.7f * Mathf.Sin(2f * Mathf.PI * (320f - 900f * t) * t));
             _door = Make("Door", 0.35f, (t, n) => Envelope(t, 0.01f, 0.3f) * (0.5f * Mathf.Sin(2f * Mathf.PI * 80f * t) + 0.25f * n));
+            // Kapak bir yere düşünce: kısa, tok bir tık.
+            _knock = Make("Knock", 0.12f, (t, n) => Envelope(t, 0.001f, 0.06f) * (0.45f * Mathf.Sin(2f * Mathf.PI * 520f * t) + 0.25f * Mathf.Sin(2f * Mathf.PI * 1310f * t) + 0.2f * n));
+            // Tabağa konan dilim: yumuşak, kısa bir tık; bırakılamayınca iki kısa, pes "olmaz" sesi (görmeyen anlasın).
+            _place = Make("Place", 0.09f, (t, n) => Envelope(t, 0.002f, 0.07f) * (0.35f * Mathf.Sin(2f * Mathf.PI * 620f * t) + 0.15f * n));
+            _refuse = Make("Refuse", 0.26f, (t, n) => (t < 0.09f ? Envelope(t, 0.003f, 0.07f) : Envelope(t - 0.13f, 0.003f, 0.09f) * (t > 0.13f ? 1f : 0f))
+                * 0.45f * Mathf.Sin(2f * Mathf.PI * (t < 0.12f ? 220f : 165f) * t));
             _success = Make("Success", 1.1f, (t, n) => Arpeggio(t, new[] { 523.25f, 659.25f, 783.99f, 1046.5f }, 0.12f));
             _fail = Make("Fail", 0.6f, (t, n) => Envelope(t, 0.01f, 0.55f) * 0.5f * Mathf.Sign(Mathf.Sin(2f * Mathf.PI * 110f * t)) * 0.4f);
 
@@ -59,11 +68,18 @@ namespace Dishaster
             _pourSource.Play();
 
             KitchenCounter.Applied += OnApplied;
+            KitchenLid.Hit += OnLidHit;
         }
 
         void OnDestroy()
         {
             KitchenCounter.Applied -= OnApplied;
+            KitchenLid.Hit -= OnLidHit;
+        }
+
+        void OnLidHit(Vector3 position, float speed)
+        {
+            Play(_knock, position, Mathf.Clamp(speed / 3f, 0.2f, 1f));
         }
 
         void Update()
@@ -106,6 +122,14 @@ namespace Dishaster
                     Burst(splash, bowl, new Color(1f, 1f, 1f, 0.8f), 10);
                     break;
 
+                case KitchenEventType.AddToPlate:
+                    if (item != null) Play(_place, item.transform.position, 0.8f);
+                    break;
+
+                case KitchenEventType.Refused:
+                    Play(_refuse, message.position, 0.7f);
+                    break;
+
                 case KitchenEventType.Grab:
                 case KitchenEventType.Drop:
                     if (item != null) Play(_tick, item.transform.position, 0.6f);
@@ -113,6 +137,10 @@ namespace Dishaster
 
                 case KitchenEventType.Door:
                     if (counter != null) Play(_door, counter.DoorPosition(message.itemId), 0.8f);
+                    break;
+
+                case KitchenEventType.LidOff:
+                    if (item != null) Play(_tick, item.transform.position + Vector3.up * item.height, 0.7f);
                     break;
             }
         }
@@ -150,7 +178,7 @@ namespace Dishaster
             if (recipe.Completed && !_completed)
             {
                 _completed = true;
-                Vector3 at = BowlCenter(counter);
+                Vector3 at = recipe.Kind == RecipeKind.TomatoPlate ? PlateCenter(counter) : BowlCenter(counter);
                 Play(_success, at, 1f);
                 Burst(confetti, at + Vector3.up * 0.3f, Color.white, 80);
             }
@@ -160,6 +188,20 @@ namespace Dishaster
                 _failed = true;
                 Play(_fail, BowlCenter(counter), 1f);
             }
+        }
+
+        /// <summary>Adadaki (yoksa herhangi) tabağın ortası: domatesli tabak tamamlanınca konfeti orada.</summary>
+        static Vector3 PlateCenter(KitchenCounter counter)
+        {
+            KitchenPlate any = null;
+            foreach (KitchenPlate plate in counter.Plates)
+            {
+                if (plate == null || !plate.gameObject.activeInHierarchy) continue;
+                if (counter.IsOnIsland(plate.transform.position)) return plate.Item.Center;
+                if (any == null) any = plate;
+            }
+
+            return any != null ? any.Item.Center : BowlCenter(counter);
         }
 
         static Vector3 BowlCenter(KitchenCounter counter)

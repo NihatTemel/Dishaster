@@ -102,6 +102,8 @@ namespace Dishaster
 
             Vector3 eyes = player.transform.InverseTransformPoint((left.position + right.position) * 0.5f);
             player.headPivot.localPosition = new Vector3(player.headPivot.localPosition.x, eyes.y, eyes.z);
+            // Çömelince bundan iniyor.
+            player.StandEyeHeight = eyes.y;
         }
     }
 }

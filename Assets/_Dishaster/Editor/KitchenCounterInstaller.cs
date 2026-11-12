@@ -28,7 +28,6 @@ namespace Dishaster.EditorTools
         static readonly Vector2 CupSpot = new Vector2(-0.78f, -0.38f);
         static readonly Vector2 BowlSpot = new Vector2(-0.4f, -0.2f);
         static readonly Vector2 KnifeSpot = new Vector2(0.32f, 0.2f);
-        static readonly Vector2 BreadSpot = new Vector2(-0.45f, 0.38f);
 
         // Art'ın aletleri gerçeğin ~1,5 katı (ARACLAR.md): ölçü bardağı da aynı ölçekte, 1 L yine 1 L.
         const float CupScale = 1.5f;
@@ -133,19 +132,19 @@ namespace Dishaster.EditorTools
             PlaceItem(root.transform, BuildBowl(), new Vector3(BowlSpot.x, top, BowlSpot.y), 0f);
             GameObject knife = BuildKnife();
             if (knife != null) PlaceItem(root.transform, knife, new Vector3(KnifeSpot.x, top, KnifeSpot.y), 90f);
-            GameObject bread = FoodShowcaseInstaller.FoodItem("PF_Bread_Loaf_01");
-            if (bread != null) PlaceItem(root.transform, bread, new Vector3(BreadSpot.x, top, BreadSpot.y), 15f);
+            // Adada sadece aletler; ekmek buzdolabında (FridgeInstaller).
 
             PrefabUtility.SaveAsPrefabAsset(root, CounterPath);
             Object.DestroyImmediate(root);
             return true;
         }
 
-        internal static void PlaceItem(Transform parent, GameObject itemPrefab, Vector3 position, float yaw)
+        internal static GameObject PlaceItem(Transform parent, GameObject itemPrefab, Vector3 position, float yaw)
         {
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(itemPrefab, parent);
             instance.transform.localPosition = position;
             instance.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+            return instance;
         }
 
         // ── EŞYALAR ─────────────────────────────────────────────────────────
@@ -297,7 +296,8 @@ namespace Dishaster.EditorTools
             return SaveItem(root, KitchenItemKind.Generic, grabRadius, height, holdForward);
         }
 
-        // Art'ın bıçağı: pivotu sapın ortası, uzun ekseni x. Eşyanın +z'si ağız (tutuş ve kesme buna göre), ağız aşağı.
+        // Art'ın bıçağı: pivotu sapın ortası, uzun ekseni x. Eşyanın +z'si ağzın ucu; tezgahta yatık duruyor. Elde dik
+        // tutuluşu (ağız aşağı) ve uzanma payları oyunda KitchenItem'da kutudan ve Handle'dan hesaplanıyor.
         static GameObject BuildKnife()
         {
             GameObject art = KitchenLayout.Art(KitchenLayout.ToolsArt + "PF_Knife_Chef_01");

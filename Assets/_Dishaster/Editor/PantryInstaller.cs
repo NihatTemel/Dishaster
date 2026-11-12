@@ -7,9 +7,11 @@ namespace Dishaster.EditorTools
 {
     /// <summary>
     /// Pantry prefab'ı: doğu duvarı boyunca kiler. Üç alt dolap (art), tezgahlarında art'ın sebze kasaları, her
-    /// kasada beşer yiyecek (domates, soğan, biber, mantar, havuç; art'ın kesilebilen yiyecekleri), üstte duvar
-    /// rafında baharat kavanozları. Game sahnesine koyar; Version değişince kendiliğinden yeniden kurar. Tezgah,
-    /// kasa tabanı ve raf yükseklikleri mesh'ten ölçülüyor.
+    /// kasada beşer yiyecek (domates, soğan, biber, mantar, havuç; art'ın kesilebilen yiyecekleri; KitchenCrate ile
+    /// her oyunda karışık), üstte duvar rafında baharat kavanozları. Game sahnesine koyar; Version değişince
+    /// kendiliğinden yeniden kurar. Tezgah, kasa tabanı ve raf yükseklikleri mesh'ten ölçülüyor.
+    /// Not: Game sahnesindeki kiler Özgür'ün düzeninde (kasalar güney duvarında iki sıra); yeniden kurmak o düzeni
+    /// bozar. Sahnedeki ayarlar KitchenSetupInstaller'da.
     /// </summary>
     [InitializeOnLoad]
     public static class PantryInstaller
@@ -146,6 +148,7 @@ namespace Dishaster.EditorTools
             Vector3 into = frame.into;
             Vector3 along = frame.along;
             Vector3 center = new Vector3(above.x, 0f, above.z);
+            var foods = new KitchenItem[ItemsPerCrate];
             for (int i = 0; i < ItemsPerCrate; i++)
             {
                 Vector3 offset;
@@ -167,8 +170,11 @@ namespace Dishaster.EditorTools
 
                 Vector3 spot = center + offset;
                 float floor = SurfaceBelow(crate, new Vector3(spot.x, top + 0.5f, spot.z), 0.6f, out Vector3 bottom) ? bottom.y : top + 0.02f;
-                KitchenCounterInstaller.PlaceItem(parent, foodPrefab, new Vector3(spot.x, floor + 0.002f, spot.z), yaw);
+                GameObject placed = KitchenCounterInstaller.PlaceItem(parent, foodPrefab, new Vector3(spot.x, floor + 0.002f, spot.z), yaw);
+                foods[i] = placed.GetComponent<KitchenItem>();
             }
+
+            crate.AddComponent<KitchenCrate>().items = foods;
         }
 
         // ── BAHARAT RAFI ────────────────────────────────────────────────────
@@ -185,7 +191,8 @@ namespace Dishaster.EditorTools
                 rack.Uygula();
             }
 
-            AddBox(shelf);
+            // Her katın tahtası ayrı: tek kutu kavanozları içine alıp elin onlara değmesini engelliyordu.
+            KitchenSetupInstaller.AddBoardColliders(shelf.transform);
             Outline(shelf, LowVisionOutlineType.Wall);
 
             // Üç kavanoz üst katta, üçü alt katta. Üst kat yukarıdan, alt kat üst katın altından ölçülüyor.

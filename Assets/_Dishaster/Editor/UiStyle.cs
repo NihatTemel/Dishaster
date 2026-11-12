@@ -18,6 +18,7 @@ namespace Dishaster.EditorTools
         const string Folder = "Assets/_Dishaster/UI";
         const string RoundedPath = Folder + "/UI_Rounded.png";
         const string FadePath = Folder + "/UI_Fade.png";
+        const string CheckPath = Folder + "/UI_Check.png";
         const string FontFolder = Folder + "/Fonts";
         const string SourceFonts = "Assets/Mirror/Hosting/Edgegap/Editor/Fonts/Src/Spartan/";
 
@@ -44,6 +45,8 @@ namespace Dishaster.EditorTools
 
         public static Sprite Rounded => SpriteAt(RoundedPath, WriteRounded, new Vector4(24f, 24f, 24f, 24f));
         public static Sprite Fade => SpriteAt(FadePath, WriteFade, Vector4.zero);
+        public static Sprite Check => SpriteAt(CheckPath, WriteCheck, Vector4.zero);
+        public static Sprite Circle => AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Knob.psd");
 
         // ── PARÇALAR ────────────────────────────────────────────────────────
 
@@ -92,6 +95,60 @@ namespace Dishaster.EditorTools
             if (font != null) text.font = font;
         }
 
+        /// <summary>
+        /// Yazı kutusuna sığsın: satır kaydırılıyor, yine sığmazsa boyu en çok minScale'e kadar küçülüyor; o da
+        /// yetmezse sonu "…" ile kesiliyor (kutudan taşmıyor).
+        /// </summary>
+        public static void Fit(TMP_Text text, float minScale = 0.7f, bool wrap = true)
+        {
+            text.enableWordWrapping = wrap;
+            text.enableAutoSizing = true;
+            text.fontSizeMax = text.fontSize;
+            text.fontSizeMin = Mathf.Round(text.fontSize * minScale);
+            text.overflowMode = TextOverflowModes.Ellipsis;
+        }
+
+        /// <summary>İçeriğe göre uzayan dikey dizi (kart): çocuklar genişliğe yayılıyor, yükseklik içerikten.</summary>
+        public static VerticalLayoutGroup Column(GameObject target, RectOffset padding, float spacing, bool fitHeight)
+        {
+            var column = target.AddComponent<VerticalLayoutGroup>();
+            column.padding = padding;
+            column.spacing = spacing;
+            column.childAlignment = TextAnchor.UpperLeft;
+            column.childControlWidth = true;
+            column.childControlHeight = true;
+            column.childForceExpandWidth = true;
+            column.childForceExpandHeight = false;
+
+            if (fitHeight)
+            {
+                var fitter = target.AddComponent<ContentSizeFitter>();
+                fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+                fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            }
+
+            return column;
+        }
+
+        /// <summary>Düzende sabit boylu öğe (ayraç, rozet).</summary>
+        public static LayoutElement Fixed(GameObject target, float width, float height)
+        {
+            var element = target.AddComponent<LayoutElement>();
+            if (width > 0f)
+            {
+                element.minWidth = width;
+                element.preferredWidth = width;
+            }
+
+            if (height > 0f)
+            {
+                element.minHeight = height;
+                element.preferredHeight = height;
+            }
+
+            return element;
+        }
+
         /// <summary>Butonun görünümü: renk ve yazı türe göre, köşeler yuvarlak, üstüne gelince/basınca koyulaşıyor.</summary>
         public static void Style(Button button, Kind kind)
         {
@@ -119,6 +176,11 @@ namespace Dishaster.EditorTools
             colors.disabledColor = new Color(1f, 1f, 1f, 0.45f);
             colors.fadeDuration = 0.08f;
             button.colors = colors;
+
+            // Tek gölge: yeniden stillenince üst üste eklenmesin (her gölge ağı ikiye katlıyor).
+            Shadow[] shadows = button.GetComponents<Shadow>();
+            for (int i = 0; i < shadows.Length; i++)
+                Object.DestroyImmediate(shadows[i], true);
 
             if (kind == Kind.Primary || kind == Kind.Accent)
             {
@@ -203,6 +265,39 @@ namespace Dishaster.EditorTools
             texture.SetPixels32(pixels);
             File.WriteAllBytes(path, texture.EncodeToPNG());
             Object.DestroyImmediate(texture);
+        }
+
+        // Beyaz tik (kalın, yuvarlak uçlu iki çizgi): tarif kartında yapılan adım.
+        static void WriteCheck(string path)
+        {
+            const int size = 64;
+            var a = new Vector2(14f, 33f);
+            var b = new Vector2(27f, 20f);
+            var c = new Vector2(50f, 45f);
+            const float half = 5.5f;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            var pixels = new Color32[size * size];
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    var p = new Vector2(x + 0.5f, y + 0.5f);
+                    float distance = Mathf.Min(SegmentDistance(p, a, b), SegmentDistance(p, b, c));
+                    float alpha = Mathf.Clamp01(half - distance + 0.5f);
+                    pixels[y * size + x] = new Color32(255, 255, 255, (byte)Mathf.RoundToInt(alpha * 255f));
+                }
+            }
+
+            texture.SetPixels32(pixels);
+            File.WriteAllBytes(path, texture.EncodeToPNG());
+            Object.DestroyImmediate(texture);
+        }
+
+        static float SegmentDistance(Vector2 p, Vector2 a, Vector2 b)
+        {
+            Vector2 ab = b - a;
+            float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / ab.sqrMagnitude);
+            return Vector2.Distance(p, a + ab * t);
         }
 
         // Soldan sağa yumuşakça kaybolan beyaz (menüde kartın arkasındaki karartma).

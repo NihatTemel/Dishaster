@@ -5,7 +5,11 @@ using UnityEngine.Rendering;
 
 namespace Dishaster
 {
-    /// <summary>Game sahnesindeki FPS oyuncu. Konum ve bakışı kendi makinesi yönetiyor, NetworkTransform'lar dağıtıyor.</summary>
+    /// <summary>
+    /// Game sahnesindeki FPS oyuncu. Konum ve bakışı kendi makinesi yönetiyor, NetworkTransform'lar dağıtıyor.
+    /// Ctrl basılıyken çömeliyor: kafa pivotu (kamera) iniyor, kapsül kısalıyor, yavaş yürüyor, zıplamıyor; tavana
+    /// değecekse kalkmıyor. Çömelme herkese gidiyor (karakter herkeste çömeliyor, bkz. CharacterBody).
+    /// </summary>
     [RequireComponent(typeof(CharacterController))]
     public class DishasterPlayer : NetworkBehaviour
     {
@@ -22,6 +26,13 @@ namespace Dishaster
         public float mouseSensitivity = 2f;
         public float maxPitch = 85f;
 
+        [Header("Çömelme (Ctrl basılıyken)")]
+        public float crouchSpeed = 2f;
+        [Tooltip("Çömelince kapsülün boyu (ayakta 2 m).")]
+        public float crouchHeight = 1.45f;
+        [Tooltip("Ayakta ↔ çömelik geçiş süresi (saniye).")]
+        public float crouchSeconds = 0.22f;
+
         [Header("Yakından bakma (Z basılıyken; görmeyen hariç)")]
         public float zoomFieldOfView = 22f;
         public float zoomSpeed = 12f;
@@ -36,6 +47,15 @@ namespace Dishaster
         const float CameraBlendSpeed = 10f;
         const KeyCode ZoomKey = KeyCode.Z;
 
+        // Sahibi Ctrl'e basınca sunucuya bildiriyor; diğerleri buradan görüyor.
+        [SyncVar] bool _crouching;
+        bool _crouchInput;
+        bool _crouchForTest;
+        float _crouchBlend;
+        float _standHeight;
+        Vector3 _standCenter;
+        float _standEyeHeight;
+
         CharacterController _controller;
         Camera _viewCamera;
         Transform _cameraOverride;
@@ -49,6 +69,26 @@ namespace Dishaster
         /// <summary>Kameranın kafa pivotuna göre kayması: uzanıp eğilince bakış yönünde öne (nişangah aynı yerde). CharacterBody veriyor.</summary>
         public Vector3 CameraOffset { get; set; }
 
+        /// <summary>Çömeliyor mu (kendi makinesinde tuşa göre, diğerlerinde sunucudan gelen).</summary>
+        public bool IsCrouching => isLocalPlayer ? _crouchInput : _crouching;
+
+        /// <summary>0 ayakta, 1 tam çömelik; yumuşak geçiş (herkeste aynı hızda).</summary>
+        public float CrouchAmount => Mathf.SmoothStep(0f, 1f, _crouchBlend);
+
+        /// <summary>Tam çömelince gözlerin (kafa pivotunun) ne kadar indiği: karakterin bacak boyundan (CharacterBody).</summary>
+        public float CrouchDrop { get; set; } = 0.4f;
+
+        /// <summary>Ayaktayken kafa pivotunun (gözlerin) yüksekliği; karakter giydirilince gözlerine göre (CharacterVisuals).</summary>
+        public float StandEyeHeight
+        {
+            get => _standEyeHeight;
+            set
+            {
+                _standEyeHeight = value;
+                ApplyHeadHeight();
+            }
+        }
+
         [Server]
         public void ServerInit(int monkeyRole, string displayName)
         {
@@ -59,6 +99,9 @@ namespace Dishaster
         void Awake()
         {
             _controller = GetComponent<CharacterController>();
+            _standHeight = _controller.height;
+            _standCenter = _controller.center;
+            _standEyeHeight = headPivot.localPosition.y;
         }
 
         public override void OnStartClient()
@@ -89,14 +132,71 @@ namespace Dishaster
 
         void Update()
         {
-            if (!isLocalPlayer) return;
+            if (isLocalPlayer)
+            {
+                // İmleç serbestse (ESC menüsü) oyuncu kontrolü durur, yerçekimi devam eder.
+                bool hasControl = Cursor.lockState == CursorLockMode.Locked && !ControlBlocked;
 
-            // İmleç serbestse (ESC menüsü) oyuncu kontrolü durur, yerçekimi devam eder.
-            bool hasControl = Cursor.lockState == CursorLockMode.Locked && !ControlBlocked;
+                UpdateCrouchInput(hasControl);
+                UpdateZoom(hasControl);
+                if (hasControl) Look();
+                Move(hasControl);
+            }
 
-            UpdateZoom(hasControl);
-            if (hasControl) Look();
-            Move(hasControl);
+            UpdateCrouch();
+        }
+
+        // ── ÇÖMELME ─────────────────────────────────────────────────────────
+
+        void UpdateCrouchInput(bool hasControl)
+        {
+            bool wanted = _crouchForTest || hasControl && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl));
+            // Kalkınca kafası bir yere değecekse çömelik kalıyor.
+            if (!wanted && _crouchInput && !CanStand()) wanted = true;
+            if (wanted == _crouchInput) return;
+
+            _crouchInput = wanted;
+            CmdSetCrouch(wanted);
+        }
+
+        [Command]
+        void CmdSetCrouch(bool crouching)
+        {
+            _crouching = crouching;
+        }
+
+        /// <summary>Otomatik test için: Ctrl'e basılı tutmak gibi.</summary>
+        public void SetCrouchForTest(bool crouching)
+        {
+            _crouchForTest = crouching;
+        }
+
+        bool CanStand()
+        {
+            float radius = _controller.radius * 0.95f;
+            Vector3 top = transform.TransformPoint(_controller.center + Vector3.up * (_controller.height / 2f - _controller.radius));
+            float rise = _standHeight - _controller.height;
+            return rise <= 0.01f || !Physics.SphereCast(top, radius, Vector3.up, out _, rise, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+        }
+
+        /// <summary>Herkeste: geçiş, kafa pivotunun yüksekliği ve kapsül (ayaklar yerinde kalıyor).</summary>
+        void UpdateCrouch()
+        {
+            float target = IsCrouching ? 1f : 0f;
+            if (Mathf.Approximately(_crouchBlend, target)) return;
+
+            _crouchBlend = Mathf.MoveTowards(_crouchBlend, target, Time.deltaTime / Mathf.Max(0.01f, crouchSeconds));
+            ApplyHeadHeight();
+
+            float height = Mathf.Lerp(_standHeight, crouchHeight, CrouchAmount);
+            _controller.height = height;
+            _controller.center = _standCenter + Vector3.down * ((_standHeight - height) / 2f);
+        }
+
+        void ApplyHeadHeight()
+        {
+            Vector3 local = headPivot.localPosition;
+            headPivot.localPosition = new Vector3(local.x, _standEyeHeight - CrouchAmount * CrouchDrop, local.z);
         }
 
         /// <summary>Uzaktaki küçük şeyler (ölçü bardağının çizgileri) okunabilsin diye. Görmeyen yakınlaştıramıyor.</summary>
@@ -126,7 +226,7 @@ namespace Dishaster
             if (hasControl)
             {
                 var input = new Vector3(Input.GetAxisRaw("Horizontal"), 0f, Input.GetAxisRaw("Vertical"));
-                float speed = Input.GetKey(KeyCode.LeftShift) ? sprintSpeed : walkSpeed;
+                float speed = IsCrouching ? crouchSpeed : Input.GetKey(KeyCode.LeftShift) ? sprintSpeed : walkSpeed;
                 horizontal = transform.TransformDirection(Vector3.ClampMagnitude(input, 1f)) * speed;
             }
 
@@ -134,7 +234,7 @@ namespace Dishaster
             {
                 // Küçük negatif değer: yerde kalmayı (isGrounded) garanti ediyor.
                 _verticalVelocity = -1f;
-                if (hasControl && Input.GetButtonDown("Jump"))
+                if (hasControl && !IsCrouching && Input.GetButtonDown("Jump"))
                     _verticalVelocity = Mathf.Sqrt(2f * gravity * jumpHeight);
             }
             else

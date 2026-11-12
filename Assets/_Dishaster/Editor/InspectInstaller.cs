@@ -13,7 +13,7 @@ namespace Dishaster.EditorTools
     [InitializeOnLoad]
     public static class InspectInstaller
     {
-        const string Version = "2";
+        const string Version = "3";
         const string VersionFile = "ProjectSettings/DishasterInspect.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/Inspect.prefab";
 
@@ -63,14 +63,16 @@ namespace Dishaster.EditorTools
             // Nişangahın hemen altında.
             TMP_Text prompt = DishasterSceneBuilder.AddText(canvas, "Prompt", "[F] İncele", 30f, TextColor,
                 new Vector2(0.5f, 0.5f), new Vector2(0f, -60f), new Vector2(400f, 50f), true);
+            UiStyle.Fit(prompt, 0.7f, false);
             var promptShadow = prompt.gameObject.AddComponent<UnityEngine.UI.Shadow>();
             promptShadow.effectColor = new Color(0f, 0f, 0f, 0.6f);
             promptShadow.effectDistance = new Vector2(1.5f, -1.5f);
             inspect.prompt = prompt.gameObject;
 
             Image panel = UiStyle.Card(canvas, "Help", PanelColor, new Vector2(0.5f, 0f), new Vector2(0f, 60f), new Vector2(900f, 64f));
-            DishasterSceneBuilder.AddText(panel.transform, "HelpText", "[F] Bırak     Fare: etrafında dön     Tekerlek: yaklaş / uzaklaş", 26f, TextColor,
-                new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(880f, 60f));
+            TMP_Text help = DishasterSceneBuilder.AddText(panel.transform, "HelpText", "<b>[F]</b> Bırak     <b>Fare</b> etrafında dön     <b>Tekerlek</b> yaklaş / uzaklaş", 26f, TextColor,
+                new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(860f, 56f));
+            UiStyle.Fit(help, 0.7f, false);
             inspect.help = panel.gameObject;
 
             PrefabUtility.SaveAsPrefabAsset(canvas.gameObject, PrefabPath);

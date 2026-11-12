@@ -13,7 +13,7 @@ namespace Dishaster.EditorTools
     [InitializeOnLoad]
     public static class VoiceChatInstaller
     {
-        const string Version = "2";
+        const string Version = "3";
         const string VersionFile = "ProjectSettings/DishasterVoiceChat.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/VoiceChat.prefab";
 
@@ -63,6 +63,10 @@ namespace Dishaster.EditorTools
             TMP_Text status = DishasterSceneBuilder.AddText(canvas, "Status", "", 26f, TextColor,
                 new Vector2(1f, 0f), new Vector2(-170f, 45f), new Vector2(300f, 50f));
             status.alignment = TextAlignmentOptions.Right;
+            UiStyle.Fit(status, 0.7f, false);
+            var shadow = status.gameObject.AddComponent<UnityEngine.UI.Shadow>();
+            shadow.effectColor = new Color(0f, 0f, 0f, 0.6f);
+            shadow.effectDistance = new Vector2(1.5f, -1.5f);
             voice.status = status;
 
             PrefabUtility.SaveAsPrefabAsset(canvas.gameObject, PrefabPath);

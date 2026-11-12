@@ -12,7 +12,7 @@ namespace Dishaster.EditorTools
     [InitializeOnLoad]
     public static class FxInstaller
     {
-        const string Version = "1";
+        const string Version = "2";
         const string VersionFile = "ProjectSettings/DishasterFx.version";
         const string PrefabPath = "Assets/_Dishaster/Prefabs/KitchenFx.prefab";
         const string MaterialFolder = "Assets/_Dishaster/Materials";
@@ -62,6 +62,7 @@ namespace Dishaster.EditorTools
 
             Material particle = GetMaterial(ParticleMaterialPath, Shader.Find("Particles/Standard Unlit"),
                 AssetDatabase.GetBuiltinExtraResource<Texture2D>("Default-Particle.psd"));
+            MakeFade(particle);
 
             fx.juice = AddParticles(root.transform, "Juice", particle, 0.45f, 1.3f, 0.012f, 1.8f, 0.01f, false);
             fx.splash = AddParticles(root.transform, "Splash", particle, 0.35f, 0.9f, 0.009f, 1.4f, 0.03f, false);
@@ -70,6 +71,25 @@ namespace Dishaster.EditorTools
             AssetDatabase.SaveAssets();
             PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
             Object.DestroyImmediate(root);
+        }
+
+        /// <summary>
+        /// Kodla kurulan malzeme opak modda kalıyordu (Inspector'daki ayar kodda yapılmıyor): dokunun siyah zemini kare
+        /// olarak görünüyordu (kesmede, tarif bitince). Yarı saydam (Fade): yumuşak, yuvarlak taneler.
+        /// </summary>
+        static void MakeFade(Material material)
+        {
+            material.SetFloat("_Mode", 2f);
+            material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            material.SetFloat("_ZWrite", 0f);
+            material.SetOverrideTag("RenderType", "Transparent");
+            material.EnableKeyword("_ALPHABLEND_ON");
+            material.DisableKeyword("_ALPHATEST_ON");
+            material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            material.DisableKeyword("_ALPHAMODULATE_ON");
+            material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            EditorUtility.SetDirty(material);
         }
 
         static Material GetMaterial(string path, Shader shader, Texture texture)

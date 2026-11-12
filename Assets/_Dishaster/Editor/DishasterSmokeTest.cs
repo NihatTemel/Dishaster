@@ -212,7 +212,7 @@ namespace Dishaster.EditorTools
                 targets[(int)Ingredient.Strawberry] = 3;
 
                 // Doğru yol.
-                var recipe = new Recipe();
+                var recipe = new Recipe(RecipeKind.StrawberryMilk);
                 recipe.SetTargets(targets);
                 KitchenContainer cup = Make("Cup", 1000f, true, true, false);
                 KitchenContainer bowl = Make("Bowl", 2500f, false, true, true);
@@ -245,7 +245,7 @@ namespace Dishaster.EditorTools
                 Expect(recipe.Completed && !recipe.Failed, "tarif tamamlanmalı");
 
                 // Süt kutudan doğrudan kaseye.
-                var direct = new Recipe();
+                var direct = new Recipe(RecipeKind.StrawberryMilk);
                 direct.SetTargets(targets);
                 KitchenContainer carton = Make("Carton", 1000f, true, false, false);
                 KitchenContainer bowl2 = Make("Bowl2", 2500f, false, true, true);
@@ -255,7 +255,7 @@ namespace Dishaster.EditorTools
                 Expect(direct.Failed, "kutudan doğrudan kaseye dökmek bozmalı");
 
                 // Fazla dilim.
-                var extra = new Recipe();
+                var extra = new Recipe(RecipeKind.StrawberryMilk);
                 extra.SetTargets(targets);
                 KitchenContainer bowl3 = Make("Bowl3", 2500f, false, true, true);
                 for (int i = 0; i < 4; i++)

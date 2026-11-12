@@ -129,6 +129,7 @@ namespace Dishaster.EditorTools
             role.prompt = prompt.gameObject;
 
             BuildToolbar(canvas, role);
+            GameUiInstaller.StyleNotebook(role);
 
             PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
             Object.DestroyImmediate(root);
